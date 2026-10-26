@@ -1,5 +1,7 @@
 # ReconForge
 
+[![Tests](https://github.com/Mazen-black/my-scanner-ReconForge/actions/workflows/tests.yml/badge.svg)](https://github.com/Mazen-black/my-scanner-ReconForge/actions/workflows/tests.yml)
+
 **my-scanner-ReconForge** is a Python-based network reconnaissance and vulnerability assessment tool.
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
@@ -123,4 +125,4 @@ Use this tool only on systems you own or have explicit authorization to test. Fo
 
 ## License
 
-This project is intended to be released under the MIT License. See [LICENSE](LICENSE).
+Released under the MIT License. See [LICENSE](LICENSE).
