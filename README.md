@@ -1,4 +1,6 @@
-# my-scanner
+# ReconForge
+
+**my-scanner-ReconForge** is a Python-based network reconnaissance and vulnerability assessment tool.
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
@@ -45,8 +47,8 @@ sudo apt install nmap exploitdb
 Create a virtual environment and install Python dependencies:
 
 ```bash
-git clone <REPOSITORY_URL>
-cd my-scanner
+git clone https://github.com/Mazen-black/my-scanner-ReconForge.git
+cd my-scanner-ReconForge
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
