@@ -39,21 +39,52 @@ def _cve_rows(cves):
         severity = str(cve.get("severity")).title() if cve.get("severity") else _severity(score)
         applicability = cve.get("applicability") or {}
         status = applicability.get("status", "candidate_unverified")
+        priority = cve.get("risk_priority") or {}
+        priority_level = priority.get("priority", "Unscored")
         css = {
             "Critical": "critical", "High": "high", "Medium": "medium",
             "Low": "low", "None": "none",
         }.get(severity, "unknown")
+        priority_css = {
+            "Critical": "critical", "High": "high", "Medium": "medium",
+            "Low": "low", "Informational": "none",
+        }.get(priority_level, "unknown")
         score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        priority_score = priority.get("priority_score")
+        priority_text = f"{priority_score:.1f}" if isinstance(priority_score, (int, float)) else "N/A"
         rows.append(
             '<tr>'
             f'<td><strong>{_e(cve.get("id"))}</strong></td>'
             f'<td><span class="severity {css}">{_e(severity)}</span></td>'
             f'<td class="numeric">{_e(score_text)}</td>'
+            f'<td><span class="severity {priority_css}">{_e(priority_level)}</span> <span class="muted">({_e(priority_text)})</span></td>'
             f'<td>{_e(status)}</td>'
             f'<td>{_e(cve.get("summary"))}</td>'
             '</tr>'
         )
-    return "".join(rows) or '<tr><td colspan="5" class="empty">No CVE results recorded.</td></tr>'
+    return "".join(rows) or '<tr><td colspan="6" class="empty">No CVE results recorded.</td></tr>'
+
+
+def _risk_rows(results):
+    rows = []
+    for item in results or []:
+        risk = item.get("risk_assessment") or {}
+        score = risk.get("score")
+        level = risk.get("level", "Unscored")
+        css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(level, "unknown")
+        score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        service = item.get("service") or {}
+        rows.append(
+            '<tr>'
+            f'<td>{_e(item.get("port"))}/{_e(service.get("name"))}</td>'
+            f'<td>{_e(service.get("product"))} {_e(service.get("version"))}</td>'
+            f'<td><span class="severity {css}">{_e(level)}</span></td>'
+            f'<td class="numeric">{_e(score_text)}</td>'
+            f'<td>{_e(risk.get("top_cve"))}</td>'
+            f'<td>{_e(risk.get("exploit_reference_count", 0))}</td>'
+            '</tr>'
+        )
+    return "".join(rows) or '<tr><td colspan="6" class="empty">No service risk data recorded.</td></tr>'
 
 
 def _exploit_rows(exploits):
@@ -86,6 +117,14 @@ def render_html_report(results, target="Unknown", generated_at=None):
     high_critical = sum(
         1 for cve in cves
         if _severity(cve.get("cvss")) in ("High", "Critical")
+    )
+    high_priority = sum(
+        1 for cve in cves
+        if (cve.get("risk_priority") or {}).get("priority") in ("High", "Critical")
+    )
+    unverified_candidates = sum(
+        1 for cve in cves
+        if (cve.get("applicability") or {}).get("status") == "candidate_unverified"
     )
 
     service_rows = []
@@ -145,13 +184,18 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">CVE references</div><div class="metric">{len(cves)}</div></div>
 <div class="card"><div class="muted">High / Critical CVEs</div><div class="metric">{high_critical}</div></div>
 <div class="card"><div class="muted">Version matches</div><div class="metric">{confirmed_matches}</div></div>
+<div class="card"><div class="muted">High / Critical review priority</div><div class="metric">{high_priority}</div></div>
+<div class="card"><div class="muted">Unverified CVE candidates</div><div class="metric">{unverified_candidates}</div></div>
 <div class="card"><div class="muted">Exploit references</div><div class="metric">{len(exploits)}</div></div>
 </div>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>
-<section><h2>CVE Assessment</h2><p class="muted">References are ranked by CVSS. Applicability status is based on available NVD CPE evidence.</p>
-<div class="table-wrap"><table><thead><tr><th>CVE</th><th>Severity</th><th>CVSS</th><th>Applicability</th><th>Summary</th></tr></thead>
+<section><h2>Risk Prioritization</h2><p class="muted">Service priority uses the highest CVE review-priority score. Exploit-DB references are shown as research leads and do not increase the numeric score. This is not a CVSS score.</p>
+<div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Priority</th><th>Score</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
+<tbody>{_risk_rows(results)}</tbody></table></div></section>
+<section><h2>CVE Assessment</h2><p class="muted">CVSS base severity and ReconForge review priority are separate. Priority discounts unverified applicability; it does not prove exploitability.</p>
+<div class="table-wrap"><table><thead><tr><th>CVE</th><th>CVSS Severity</th><th>CVSS</th><th>Review Priority</th><th>Applicability</th><th>Summary</th></tr></thead>
 <tbody>{_cve_rows(cves)}</tbody></table></div></section>
 <section><h2>Exploit-DB References</h2><div class="table-wrap"><table><thead><tr><th>EDB ID</th><th>Title</th><th>Platform</th><th>Relevance</th><th>Confidence</th></tr></thead>
 <tbody>{_exploit_rows(exploits)}</tbody></table></div></section>
