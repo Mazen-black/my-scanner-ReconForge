@@ -12,7 +12,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 - Uses Nmap for port scanning and service/version detection.
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
-- Compares detected product/version information with available CPE and version-range data where possible.
+- Evaluates NVD CPE configuration trees with nested AND/OR logic and conservative unknown states, reducing false-positive applicability matches.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Produces JSON output with service details, matching evidence, and assessment limitations.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
@@ -115,7 +115,7 @@ Reports may contain target addresses, port/service information, software version
 - Service identification depends on Nmap's detection and the information exposed by the target.
 - NVD search results are candidates, not confirmed vulnerabilities.
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
-- NVD configuration trees can contain complex logical relationships; the current assessment should be treated as an indicator, not a complete implementation of the NVD applicability specification.
+- NVD configuration evaluation is intentionally conservative: when an AND condition depends on other products or environmental details not visible in a service banner, the result is marked candidate_unverified rather than confirmed. It is not a complete host inventory or a proof of exploitability.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
