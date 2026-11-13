@@ -544,7 +544,7 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
-            results.append(build_report_entry(
+            entry = build_report_entry(
                 host=host,
                 port=port,
                 state=state,
@@ -554,7 +554,11 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
-            ))
+            )
+            results.append(entry)
+            risk = entry["risk_assessment"]
+            risk_score = f"{risk['score']:.1f}/100" if risk["score"] is not None else "Unscored"
+            print(f"  Risk priority: {risk['level']} ({risk_score})")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = args.output or f"scan_{target}_{timestamp}.json"
