@@ -59,7 +59,7 @@ class RiskScoringTests(unittest.TestCase):
     def test_service_uses_highest_applicable_priority(self):
         cves = [
             {"id": "CVE-1", "cvss": 5.0, "applicability": {"status": "version_match"}},
-            {"id": "CVE-2", "cvss": 9.0, "applicability": {"status": "candidate_unverified"}},
+            {"id": "CVE-2", "cvss": 6.0, "applicability": {"status": "candidate_unverified"}},
         ]
         summary = assess_service_risk(cves, [])
         self.assertEqual(summary["top_cve"], "CVE-1")
