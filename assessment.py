@@ -2,6 +2,8 @@
 import re
 from urllib.parse import unquote
 
+from risk import assess_cves, assess_service_risk
+
 
 def cpe22_to_cpe23(uri):
     """Convert CPE 2.2 URI to a valid 13-component CPE 2.3 formatted string."""
@@ -243,6 +245,8 @@ def classify_exploit(row, product, version):
 
 def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits):
     """Stable, readable JSON shape for one discovered service."""
+    assessed_cves = assess_cves(cves)
+    risk = assess_service_risk(cves, exploits)
     return {
         "host": host,
         "port": port,
@@ -256,11 +260,14 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "source": "Nmap service detection",
             "cpe_queries_tested": cpes_tested,
         },
-        "cve_assessment": cves,
+        "cve_assessment": assessed_cves,
         "searchsploit_assessment": exploits,
+        "risk_assessment": risk,
         "assessment_limits": [
             "Nmap product/version banners may be incomplete or spoofed.",
             "A matching CVE or exploit reference is not confirmation of a vulnerability.",
+            "Risk priority is a transparent review heuristic, not a CVSS score or proof of exploitability.",
+            "Network exposure and business impact are not inferred from an open port.",
             "No exploit was executed by this report generator.",
         ],
     }
