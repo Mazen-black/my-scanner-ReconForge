@@ -24,42 +24,83 @@ class CPEConversionTests(unittest.TestCase):
 
 
 class CVEApplicabilityTests(unittest.TestCase):
-    def _cve(self, criteria, **bounds):
-        match = {"vulnerable": True, "criteria": criteria}
+    def _match(self, criteria, vulnerable=True, **bounds):
+        match = {"vulnerable": vulnerable, "criteria": criteria}
         match.update(bounds)
-        return {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [match]}]}]}
+        return match
+
+    def _cve(self, *matches, operator="OR"):
+        return {"configurations": [{"nodes": [{"operator": operator, "cpeMatch": list(matches)}]}]}
 
     def test_exact_version_match(self):
-        cve = self._cve("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*")
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
-        self.assertEqual(result["evidence"][0]["reason"], "exact_version")
+        self.assertEqual(result["evidence"][0]["reason"], "version_match")
 
     def test_exact_version_mismatch_is_not_match(self):
-        cve = self._cve("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*")
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*"))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
-        self.assertNotEqual(result["status"], "version_match")
+        self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
 
     def test_inclusive_version_range(self):
-        cve = self._cve("cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
-                        versionStartIncluding="2.4.0", versionEndExcluding="2.4.58")
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            versionStartIncluding="2.4.0", versionEndExcluding="2.4.58"
+        ))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
-        self.assertEqual(result["evidence"][0]["reason"], "version_range_match")
 
     def test_outside_version_range_is_not_match(self):
-        cve = self._cve("cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
-                        versionStartIncluding="2.4.0", versionEndExcluding="2.4.58")
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            versionStartIncluding="2.4.0", versionEndExcluding="2.4.58"
+        ))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.58")
-        self.assertNotEqual(result["status"], "version_match")
+        self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
 
-    def test_non_vulnerable_cpe_match_is_ignored(self):
-        cve = {"configurations": [{"nodes": [{"cpeMatch": [{
-            "vulnerable": False,
-            "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
-        }]}]}]}
+    def test_non_vulnerable_cpe_is_not_reported_as_vulnerable(self):
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*", vulnerable=False
+        ))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
-        self.assertNotEqual(result["status"], "version_match")
+        self.assertEqual(result["status"], "candidate_unverified")
+
+    def test_and_with_unknown_environmental_condition_is_unverified(self):
+        target = self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*")
+        os_condition = self._match("cpe:2.3:o:canonical:ubuntu_linux:22.04:*:*:*:*:*:*:*")
+        cve = self._cve(target, os_condition, operator="AND")
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+
+    def test_or_with_matching_target_branch_is_a_match(self):
+        target = self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*")
+        other = self._match("cpe:2.3:a:nginx:nginx:1.24:*:*:*:*:*:*:*")
+        cve = self._cve(target, other, operator="OR")
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "version_match")
+
+    def test_and_with_target_version_mismatch_is_not_match(self):
+        target = self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*")
+        other = self._match("cpe:2.3:o:canonical:ubuntu_linux:22.04:*:*:*:*:*:*:*")
+        cve = self._cve(target, other, operator="AND")
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
+
+    def test_nested_and_or_logic(self):
+        cve = {"configurations": [{"nodes": [{
+            "operator": "AND",
+            "cpeMatch": [self._match("cpe:2.3:o:canonical:ubuntu_linux:22.04:*:*:*:*:*:*:*")],
+            "children": [{
+                "operator": "OR",
+                "cpeMatch": [
+                    self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"),
+                    self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*")
+                ]
+            }]
+        }]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
 
 
 class SearchsploitTests(unittest.TestCase):
