@@ -29,6 +29,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
 5. ReconForge calculates a separate technical review-priority score from CVSS and applicability evidence. This is not a CVSS recalculation; Exploit-DB references do not increase the numeric score.
 6. An optional context layer adjusts technical review priority using operator-supplied asset criticality and exposure. Missing context remains `unknown` and uses neutral factors; the scanner never treats an open port as proof of internet reachability.
+7. Remediation Guidance gives service-specific hardening suggestions and cautious CVE follow-up/verification steps. It does not invent fixed versions, execute commands, or replace vendor advisories and change control.
 6. A JSON report is written for further review.
 7. When `--html-output` is supplied, a standalone HTML report is generated for browser viewing or printing.
 
@@ -144,7 +145,7 @@ Reports may contain target addresses, port/service information, software version
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
 - NVD configuration evaluation is intentionally conservative: when an AND condition depends on other products or environmental details not visible in a service banner, the result is marked candidate_unverified rather than confirmed. It is not a complete host inventory or a proof of exploitability.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Generic service labels without a detected product fingerprint are skipped to avoid unrelated matches.
-- Technical Risk Priority and Contextual Priority are documented heuristics for ordering manual review. Neither is CVSS or proof of exploitability. Contextual Priority uses operator-supplied asset criticality and exposure, defaults unknown values to neutral factors, and is not a quantified business-loss estimate. The scanner does not infer internet reachability from open ports.
+- Technical Risk Priority and Contextual Priority are documented heuristics for ordering manual review. Neither is CVSS or proof of exploitability. Remediation Guidance is advisory only, does not execute changes, and does not assert fixed versions without vendor evidence. Contextual Priority uses operator-supplied asset criticality and exposure, defaults unknown values to neutral factors, and is not a quantified business-loss estimate. The scanner does not infer internet reachability from open ports.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use

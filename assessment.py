@@ -4,6 +4,7 @@ from urllib.parse import unquote
 
 from risk import assess_cves, assess_service_risk
 from asset_context import assess_asset_context
+from remediation import build_remediation
 
 
 def cpe22_to_cpe23(uri):
@@ -249,6 +250,9 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
     assessed_cves = assess_cves(cves)
     risk = assess_service_risk(cves, exploits)
     risk["asset_context"] = assess_asset_context(risk, asset_criticality, exposure)
+    remediation = build_remediation(
+        {"name": service, "product": product, "version": version}, assessed_cves, risk
+    )
     return {
         "host": host,
         "port": port,
@@ -265,12 +269,14 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
         "cve_assessment": assessed_cves,
         "searchsploit_assessment": exploits,
         "risk_assessment": risk,
+        "remediation_guidance": remediation,
         "assessment_limits": [
             "Nmap product/version banners may be incomplete or spoofed.",
             "A matching CVE or exploit reference is not confirmation of a vulnerability.",
             "Risk priority is a transparent review heuristic, not a CVSS score or proof of exploitability.",
             "Network exposure and business impact are not inferred from an open port.",
             "Asset criticality and exposure context are operator-supplied and default to unknown.",
+            "Remediation guidance is advisory only; no changes or commands are executed against the target.",
             "No exploit was executed by this report generator.",
         ],
     }
