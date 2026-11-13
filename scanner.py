@@ -532,8 +532,12 @@ def main():
             exploits = []
             if not args.no_exploitdb:
                 print("  بدور على Exploits محلياً في Exploit-DB (searchsploit)...")
-                exploits = searchsploit_lookup(product or service, version)
-                if exploits:
+                # A service label such as "login" or "exec" is not a product fingerprint.
+                # Searching those generic labels creates unrelated Exploit-DB matches.
+                exploits = searchsploit_lookup(product, version) if product else []
+                if not product:
+                    print("  مفيش product fingerprint موثوق - هتخطى Searchsploit لتجنب نتائج غير مرتبطة")
+                elif exploits:
                     print(f"  لقيت {len(exploits)} exploit محتمل (أول 5):")
                     for e in exploits[:5]:
                         print(f"    EDB-{e['id']} - {e['title']}")
