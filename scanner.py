@@ -557,8 +557,10 @@ def main():
             )
             results.append(entry)
             risk = entry["risk_assessment"]
-            risk_score = f"{risk['score']:.1f}/100" if risk["score"] is not None else "Unscored"
-            print(f"  Risk priority: {risk['level']} ({risk_score})")
+            if risk["score"] is None:
+                print("  Risk priority: Unscored (no CVSS evidence available)")
+            else:
+                print(f"  Risk priority: {risk['level']} ({risk['score']:.1f}/100)")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = args.output or f"scan_{target}_{timestamp}.json"
