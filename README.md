@@ -14,6 +14,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE configuration trees with nested AND/OR logic and conservative unknown states, reducing false-positive applicability matches.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
+- Supports `--no-nvd` for offline reconnaissance and report generation when NVD is unavailable.
 - Produces JSON output with service details, matching evidence, and assessment limitations.
 - Generates a self-contained HTML dashboard with service inventory, CVE severity, applicability, Exploit-DB references, and assessment limitations.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
@@ -87,6 +88,12 @@ Disable the local Exploit-DB search:
 
 ```bash
 python scanner.py --target 192.0.2.10 --no-exploitdb
+```
+
+Run offline reconnaissance without querying NVD (for example, if the NVD API is temporarily unavailable):
+
+```bash
+python scanner.py --target 192.0.2.10 --no-nvd --html-output report.html
 ```
 
 Provide an NVD API key through an environment variable (recommended over putting a key in shell history):
