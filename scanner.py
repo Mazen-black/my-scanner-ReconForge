@@ -29,6 +29,8 @@ from datetime import datetime
 import requests
 import nmap
 
+from report import write_html_report
+
 from assessment import (
     assess_cve_applicability,
     build_report_entry,
@@ -459,8 +461,16 @@ def parse_args():
                         help="عدد نتائج NVD لكل استعلام (الافتراضي: 10)")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
+    parser.add_argument("--no-nvd", action="store_true",
+                        help="تخطّى استعلامات NVD (مفيد للاختبار دون اتصال أو عند تعطل الخدمة)")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
+    parser.add_argument("--html-output", default=None,
+                        help="اسم ملف تقرير HTML (اختياري)")
+    parser.add_argument("--asset-criticality", choices=("unknown", "low", "medium", "high", "critical"), default="unknown",
+                        help="أهمية الأصل حسب تقييمك (الافتراضي: unknown)")
+    parser.add_argument("--exposure", choices=("unknown", "internal", "internet"), default="unknown",
+                        help="مدى تعرض الأصل حسب معلوماتك (الافتراضي: unknown؛ لا يُستنتج من البورتات)")
     return parser.parse_args()
 
 
@@ -507,7 +517,9 @@ def main():
 
             cves = []
             cpes_tried = []
-            if version:
+            if args.no_nvd:
+                print("  تم تخطي NVD بناءً على --no-nvd")
+            elif version:
                 print(f"  بدور على CVEs لـ {product or service} {version}...")
                 cves, cpes_tried = check_cve_nvd(
                     session, port_data, api_key, limiter, args.results_per_page)
@@ -524,15 +536,19 @@ def main():
             exploits = []
             if not args.no_exploitdb:
                 print("  بدور على Exploits محلياً في Exploit-DB (searchsploit)...")
-                exploits = searchsploit_lookup(product or service, version)
-                if exploits:
+                # A service label such as "login" or "exec" is not a product fingerprint.
+                # Searching those generic labels creates unrelated Exploit-DB matches.
+                exploits = searchsploit_lookup(product, version) if product else []
+                if not product:
+                    print("  مفيش product fingerprint موثوق - هتخطى Searchsploit لتجنب نتائج غير مرتبطة")
+                elif exploits:
                     print(f"  لقيت {len(exploits)} exploit محتمل (أول 5):")
                     for e in exploits[:5]:
                         print(f"    EDB-{e['id']} - {e['title']}")
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
-            results.append(build_report_entry(
+            entry = build_report_entry(
                 host=host,
                 port=port,
                 state=state,
@@ -542,13 +558,34 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
-            ))
+                asset_criticality=args.asset_criticality,
+                exposure=args.exposure,
+            )
+            results.append(entry)
+            risk = entry["risk_assessment"]
+            context = risk["asset_context"]
+            if context["contextual_priority_score"] is None:
+                print(f"  Contextual priority: Unscored (asset={context['asset_criticality']}, exposure={context['network_exposure']})")
+            else:
+                print(f"  Contextual priority: {context['contextual_priority']} ({context['contextual_priority_score']:.1f}/100; asset={context['asset_criticality']}, exposure={context['network_exposure']})")
+            if risk["score"] is None:
+                print("  Risk priority: Unscored (no CVSS evidence available)")
+            else:
+                print(f"  Risk priority: {risk['level']} ({risk['score']:.1f}/100)")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = args.output or f"scan_{target}_{timestamp}.json"
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4, ensure_ascii=False)
     print(f"تم حفظ النتائج في {filename}")
+
+    if args.html_output:
+        try:
+            html_path = write_html_report(results, args.html_output, target=target)
+            print(f"تم حفظ تقرير HTML في {html_path}")
+        except OSError as e:
+            print(f"تعذر حفظ تقرير HTML: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
