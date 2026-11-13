@@ -41,5 +41,13 @@ class CheckCVEIntegrationTests(unittest.TestCase):
         self.assertEqual(mock_fetch.call_count, 2)
 
 
+class SearchsploitLookupTests(unittest.TestCase):
+    @patch("scanner.subprocess.run")
+    @patch("scanner.shutil.which", return_value="/usr/bin/searchsploit")
+    def test_missing_product_skips_searchsploit_command(self, mock_which, mock_run):
+        self.assertEqual(scanner.searchsploit_lookup("", "1.0"), [])
+        mock_run.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
