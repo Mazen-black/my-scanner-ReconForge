@@ -15,6 +15,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Evaluates NVD CPE configuration trees with nested AND/OR logic and conservative unknown states, reducing false-positive applicability matches.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Produces JSON output with service details, matching evidence, and assessment limitations.
+- Generates a self-contained HTML dashboard with service inventory, CVE severity, applicability, Exploit-DB references, and assessment limitations.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
 
 ## How it works
@@ -24,6 +25,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 3. Available CPE criteria and version bounds are compared with the detected version.
 4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
 5. A JSON report is written for further review.
+6. When `--html-output` is supplied, a standalone HTML report is generated for browser viewing or printing.
 
 CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
 
@@ -69,10 +71,16 @@ Basic scan:
 python scanner.py --target 192.0.2.10
 ```
 
-Specify ports and an output file:
+Specify ports and generate both JSON and HTML reports:
 
 ```bash
-python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json
+python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
+```
+
+You can also render an existing JSON report without running another scan:
+
+```bash
+python report.py report.json --output report.html
 ```
 
 Disable the local Exploit-DB search:
@@ -100,7 +108,7 @@ Replace `192.0.2.10` with a lab target or another system you are authorized to s
 
 ## Tests
 
-The test suite is designed to run without scanning a live target or making live NVD requests:
+The test suite is designed to run without scanning a live target or making live NVD requests. It also checks HTML escaping and report generation:
 
 ```bash
 python -m unittest discover -s tests -v
