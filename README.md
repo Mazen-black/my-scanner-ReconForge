@@ -16,7 +16,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Supports `--no-nvd` for offline reconnaissance and report generation when NVD is unavailable.
 - Produces JSON output with service details, matching evidence, and assessment limitations.
-- Generates a self-contained HTML dashboard with service inventory, CVE severity, applicability, Exploit-DB references, and assessment limitations.
+- Generates a self-contained HTML dashboard with service inventory, CVE severity, applicability, risk prioritization, Exploit-DB references, and assessment limitations.
+- Adds a transparent Risk Prioritization score that combines CVSS base score with NVD applicability evidence; unverified candidates are discounted rather than discarded.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
 
 ## How it works
@@ -25,8 +26,9 @@ A Python-based network service scanner that combines Nmap service/version detect
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
 3. Available CPE criteria and version bounds are compared with the detected version.
 4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
-5. A JSON report is written for further review.
-6. When `--html-output` is supplied, a standalone HTML report is generated for browser viewing or printing.
+5. ReconForge calculates a separate review-priority score from CVSS and applicability evidence. This is not a CVSS recalculation; Exploit-DB references do not increase the numeric score, and unknown network exposure/business impact are not guessed.
+6. A JSON report is written for further review.
+7. When `--html-output` is supplied, a standalone HTML report is generated for browser viewing or printing.
 
 CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
 
@@ -132,6 +134,7 @@ Reports may contain target addresses, port/service information, software version
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
 - NVD configuration evaluation is intentionally conservative: when an AND condition depends on other products or environmental details not visible in a service banner, the result is marked candidate_unverified rather than confirmed. It is not a complete host inventory or a proof of exploitability.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Generic service labels without a detected product fingerprint are skipped to avoid unrelated matches.
+- Risk Priority is a documented heuristic for ordering manual review. It is not CVSS, exploitability confirmation, or a business-risk assessment; network reachability beyond the scan vantage point and asset criticality require separate context.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
