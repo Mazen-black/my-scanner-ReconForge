@@ -73,6 +73,11 @@ def _risk_rows(results):
         level = risk.get("level", "Unscored")
         css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(level, "unknown")
         score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        context = risk.get("asset_context") or {}
+        context_score = context.get("contextual_priority_score")
+        context_text = f"{context_score:.1f}" if isinstance(context_score, (int, float)) else "N/A"
+        context_level = context.get("contextual_priority", "Unscored")
+        context_css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(context_level, "unknown")
         service = item.get("service") or {}
         rows.append(
             '<tr>'
@@ -80,11 +85,13 @@ def _risk_rows(results):
             f'<td>{_e(service.get("product"))} {_e(service.get("version"))}</td>'
             f'<td><span class="severity {css}">{_e(level)}</span></td>'
             f'<td class="numeric">{_e(score_text)}</td>'
+            f'<td><span class="severity {context_css}">{_e(context_level)}</span> <span class="muted">({_e(context_text)})</span></td>'
+            f'<td>{_e(context.get("asset_criticality", "unknown"))} / {_e(context.get("network_exposure", "unknown"))}</td>'
             f'<td>{_e(risk.get("top_cve"))}</td>'
             f'<td>{_e(risk.get("exploit_reference_count", 0))}</td>'
             '</tr>'
         )
-    return "".join(rows) or '<tr><td colspan="6" class="empty">No service risk data recorded.</td></tr>'
+    return "".join(rows) or '<tr><td colspan="8" class="empty">No service risk data recorded.</td></tr>'
 
 
 def _exploit_rows(exploits):
@@ -191,8 +198,8 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>
-<section><h2>Risk Prioritization</h2><p class="muted">Service priority uses the highest CVE review-priority score. Exploit-DB references are shown as research leads and do not increase the numeric score. This is not a CVSS score.</p>
-<div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Priority</th><th>Score</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
+<section><h2>Risk Prioritization</h2><p class="muted">Technical priority uses the highest CVE review-priority score. Contextual priority adjusts it only with explicitly supplied asset criticality and exposure. Unknown context is neutral. Neither score is CVSS or proof of exploitability.</p>
+<div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Technical priority</th><th>Technical score</th><th>Contextual priority</th><th>Asset / Exposure</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
 <tbody>{_risk_rows(results)}</tbody></table></div></section>
 <section><h2>CVE Assessment</h2><p class="muted">CVSS base severity and ReconForge review priority are separate. Priority discounts unverified applicability; it does not prove exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>CVE</th><th>CVSS Severity</th><th>CVSS</th><th>Review Priority</th><th>Applicability</th><th>Summary</th></tr></thead>

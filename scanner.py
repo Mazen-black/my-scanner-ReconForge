@@ -467,6 +467,10 @@ def parse_args():
                         help="اسم ملف النتائج JSON (اختياري)")
     parser.add_argument("--html-output", default=None,
                         help="اسم ملف تقرير HTML (اختياري)")
+    parser.add_argument("--asset-criticality", choices=("unknown", "low", "medium", "high", "critical"), default="unknown",
+                        help="أهمية الأصل حسب تقييمك (الافتراضي: unknown)")
+    parser.add_argument("--exposure", choices=("unknown", "internal", "internet"), default="unknown",
+                        help="مدى تعرض الأصل حسب معلوماتك (الافتراضي: unknown؛ لا يُستنتج من البورتات)")
     return parser.parse_args()
 
 
@@ -554,9 +558,16 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
+                asset_criticality=args.asset_criticality,
+                exposure=args.exposure,
             )
             results.append(entry)
             risk = entry["risk_assessment"]
+            context = risk["asset_context"]
+            if context["contextual_priority_score"] is None:
+                print(f"  Contextual priority: Unscored (asset={context['asset_criticality']}, exposure={context['network_exposure']})")
+            else:
+                print(f"  Contextual priority: {context['contextual_priority']} ({context['contextual_priority_score']:.1f}/100; asset={context['asset_criticality']}, exposure={context['network_exposure']})")
             if risk["score"] is None:
                 print("  Risk priority: Unscored (no CVSS evidence available)")
             else:

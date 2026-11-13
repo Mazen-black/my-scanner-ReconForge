@@ -3,6 +3,7 @@ import re
 from urllib.parse import unquote
 
 from risk import assess_cves, assess_service_risk
+from asset_context import assess_asset_context
 
 
 def cpe22_to_cpe23(uri):
@@ -243,10 +244,11 @@ def classify_exploit(row, product, version):
     }
 
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits):
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, asset_criticality="unknown", exposure="unknown"):
     """Stable, readable JSON shape for one discovered service."""
     assessed_cves = assess_cves(cves)
     risk = assess_service_risk(cves, exploits)
+    risk["asset_context"] = assess_asset_context(risk, asset_criticality, exposure)
     return {
         "host": host,
         "port": port,
@@ -268,6 +270,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "A matching CVE or exploit reference is not confirmation of a vulnerability.",
             "Risk priority is a transparent review heuristic, not a CVSS score or proof of exploitability.",
             "Network exposure and business impact are not inferred from an open port.",
+            "Asset criticality and exposure context are operator-supplied and default to unknown.",
             "No exploit was executed by this report generator.",
         ],
     }

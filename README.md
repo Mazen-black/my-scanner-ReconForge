@@ -17,7 +17,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Supports `--no-nvd` for offline reconnaissance and report generation when NVD is unavailable.
 - Produces JSON output with service details, matching evidence, and assessment limitations.
 - Generates a self-contained HTML dashboard with service inventory, CVE severity, applicability, risk prioritization, Exploit-DB references, and assessment limitations.
-- Adds a transparent Risk Prioritization score that combines CVSS base score with NVD applicability evidence; unverified candidates are discounted rather than discarded.
+- Adds a transparent technical Risk Prioritization score that combines CVSS base score with NVD applicability evidence; unverified candidates are discounted rather than discarded.
+- Adds an Asset Context & Exposure layer that adjusts review priority only from explicitly supplied asset criticality and network exposure; both default to `unknown` and are never inferred from open ports.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
 
 ## How it works
@@ -26,7 +27,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
 3. Available CPE criteria and version bounds are compared with the detected version.
 4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
-5. ReconForge calculates a separate review-priority score from CVSS and applicability evidence. This is not a CVSS recalculation; Exploit-DB references do not increase the numeric score, and unknown network exposure/business impact are not guessed.
+5. ReconForge calculates a separate technical review-priority score from CVSS and applicability evidence. This is not a CVSS recalculation; Exploit-DB references do not increase the numeric score.
+6. An optional context layer adjusts technical review priority using operator-supplied asset criticality and exposure. Missing context remains `unknown` and uses neutral factors; the scanner never treats an open port as proof of internet reachability.
 6. A JSON report is written for further review.
 7. When `--html-output` is supplied, a standalone HTML report is generated for browser viewing or printing.
 
@@ -79,6 +81,14 @@ Specify ports and generate both JSON and HTML reports:
 ```bash
 python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
+
+Supply asset context only when you have verified it independently:
+
+```bash
+python scanner.py --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
+```
+
+Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Supported exposure values: `unknown`, `internal`, `internet`. Both default to `unknown`. Contextual priority is a review heuristic, separate from CVSS and technical priority; its factors are documented in `asset_context.py`.
 
 You can also render an existing JSON report without running another scan:
 
@@ -134,7 +144,7 @@ Reports may contain target addresses, port/service information, software version
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
 - NVD configuration evaluation is intentionally conservative: when an AND condition depends on other products or environmental details not visible in a service banner, the result is marked candidate_unverified rather than confirmed. It is not a complete host inventory or a proof of exploitability.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Generic service labels without a detected product fingerprint are skipped to avoid unrelated matches.
-- Risk Priority is a documented heuristic for ordering manual review. It is not CVSS, exploitability confirmation, or a business-risk assessment; network reachability beyond the scan vantage point and asset criticality require separate context.
+- Technical Risk Priority and Contextual Priority are documented heuristics for ordering manual review. Neither is CVSS or proof of exploitability. Contextual Priority uses operator-supplied asset criticality and exposure, defaults unknown values to neutral factors, and is not a quantified business-loss estimate. The scanner does not infer internet reachability from open ports.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
