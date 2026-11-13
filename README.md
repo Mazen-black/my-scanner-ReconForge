@@ -131,7 +131,7 @@ Reports may contain target addresses, port/service information, software version
 - NVD search results are candidates, not confirmed vulnerabilities.
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
 - NVD configuration evaluation is intentionally conservative: when an AND condition depends on other products or environmental details not visible in a service banner, the result is marked candidate_unverified rather than confirmed. It is not a complete host inventory or a proof of exploitability.
-- Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches.
+- Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Generic service labels without a detected product fingerprint are skipped to avoid unrelated matches.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
