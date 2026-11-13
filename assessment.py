@@ -216,7 +216,7 @@ def classify_exploit(row, product, version):
     haystack = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
     product_words = [w for w in re.sub(r"[^a-z0-9]+", " ", (product or "").lower()).split() if len(w) > 1]
     version = (version or "").strip()
-    matched_words = [w for w in product_words if re.search(r"\\b" + re.escape(w) + r"\\b", haystack)]
+    matched_words = [w for w in product_words if re.search(r"\b" + re.escape(w) + r"\b", haystack)]
     version_match = bool(version and re.search(
         r"(?<![0-9a-z])" + re.escape(version.lower()) + r"(?![0-9a-z])", title.lower()
     ))
