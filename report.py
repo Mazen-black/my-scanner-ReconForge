@@ -36,7 +36,7 @@ def _cve_rows(cves):
     rows = []
     for cve in sorted(cves or [], key=_score_sort, reverse=True):
         score = cve.get("cvss")
-        severity = cve.get("severity") or _severity(score)
+        severity = str(cve.get("severity")).title() if cve.get("severity") else _severity(score)
         applicability = cve.get("applicability") or {}
         status = applicability.get("status", "candidate_unverified")
         css = {
