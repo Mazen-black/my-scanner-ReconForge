@@ -36,7 +36,7 @@ class CVEApplicabilityTests(unittest.TestCase):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
-        self.assertEqual(result["evidence"][0]["reason"], "version_match")
+        self.assertEqual(result["evidence"][0]["reason"], "exact_version")
 
     def test_exact_version_mismatch_is_not_match(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*"))
