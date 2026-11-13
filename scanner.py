@@ -461,6 +461,8 @@ def parse_args():
                         help="عدد نتائج NVD لكل استعلام (الافتراضي: 10)")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
+    parser.add_argument("--no-nvd", action="store_true",
+                        help="تخطّى استعلامات NVD (مفيد للاختبار دون اتصال أو عند تعطل الخدمة)")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
     parser.add_argument("--html-output", default=None,
@@ -511,7 +513,9 @@ def main():
 
             cves = []
             cpes_tried = []
-            if version:
+            if args.no_nvd:
+                print("  تم تخطي NVD بناءً على --no-nvd")
+            elif version:
                 print(f"  بدور على CVEs لـ {product or service} {version}...")
                 cves, cpes_tried = check_cve_nvd(
                     session, port_data, api_key, limiter, args.results_per_page)
