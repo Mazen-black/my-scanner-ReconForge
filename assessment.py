@@ -124,7 +124,7 @@ def _evaluate_node(node, vendor, product, detected_version, part):
         if result is True:
             evidence.append({
                 "criteria": match.get("criteria") or match.get("cpe23Uri"),
-                "reason": "version_match",
+                "reason": "exact_version" if (match.get("criteria") or match.get("cpe23Uri") or "").split(":")[5:6] not in ([], ["*"], ["-"], [""]) else "version_range_match",
                 "versionStartIncluding": match.get("versionStartIncluding"),
                 "versionStartExcluding": match.get("versionStartExcluding"),
                 "versionEndIncluding": match.get("versionEndIncluding"),
