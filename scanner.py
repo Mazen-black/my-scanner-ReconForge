@@ -29,6 +29,8 @@ from datetime import datetime
 import requests
 import nmap
 
+from report import write_html_report
+
 from assessment import (
     assess_cve_applicability,
     build_report_entry,
@@ -461,6 +463,8 @@ def parse_args():
                         help="عطّل بحث searchsploit المحلي")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
+    parser.add_argument("--html-output", default=None,
+                        help="اسم ملف تقرير HTML (اختياري)")
     return parser.parse_args()
 
 
@@ -549,6 +553,14 @@ def main():
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4, ensure_ascii=False)
     print(f"تم حفظ النتائج في {filename}")
+
+    if args.html_output:
+        try:
+            html_path = write_html_report(results, args.html_output, target=target)
+            print(f"تم حفظ تقرير HTML في {html_path}")
+        except OSError as e:
+            print(f"تعذر حفظ تقرير HTML: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
