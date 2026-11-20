@@ -191,6 +191,11 @@ def render_html_report(results, target="Unknown", generated_at=None):
     service_rows = []
     for item in sorted(results, key=lambda row: (str(row.get("host", "")), int(row.get("port") or 0))):
         service = item.get("service") or {}
+        os_fingerprint = item.get("host_os_fingerprint") or {}
+        os_label = os_fingerprint.get("nmap_name") or os_fingerprint.get("status") or "not_recorded"
+        os_accuracy = os_fingerprint.get("accuracy")
+        if os_accuracy is not None:
+            os_label = f"{os_label} ({os_accuracy}%)"
         service_rows.append(
             '<tr>'
             f'<td>{_e(item.get("host"))}</td>'
@@ -198,10 +203,11 @@ def render_html_report(results, target="Unknown", generated_at=None):
             f'<td>{_e(service.get("name"))}</td>'
             f'<td>{_e(service.get("product"))}</td>'
             f'<td>{_e(service.get("version"))}</td>'
+            f'<td>{_e(os_label)}</td>'
             f'<td>{_e(item.get("state"))}</td>'
             '</tr>'
         )
-    services_html = "".join(service_rows) or '<tr><td colspan="6" class="empty">No open services recorded.</td></tr>'
+    services_html = "".join(service_rows) or '<tr><td colspan="7" class="empty">No open services recorded.</td></tr>'
 
     limitations = []
     for item in results:
@@ -250,7 +256,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">Exploit references</div><div class="metric">{len(exploits)}</div></div>
 </div>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
-<thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>State</th></tr></thead>
+<thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Host OS fingerprint</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>
 <section><h2>Risk Prioritization</h2><p class="muted">Technical priority uses the highest CVE review-priority score. Contextual priority adjusts it only with explicitly supplied asset criticality and exposure. Unknown context is neutral. Neither score is CVSS or proof of exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Technical priority</th><th>Technical score</th><th>Contextual priority</th><th>Asset / Exposure</th><th>Top CVE</th><th>EDB refs</th></tr></thead>

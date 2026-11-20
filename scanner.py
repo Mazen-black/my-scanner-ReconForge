@@ -58,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.10"
-SCANNER_VERSION = "0.10.1"
+REPORT_SCHEMA_VERSION = "1.11"
+SCANNER_VERSION = "0.10.2"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -527,6 +527,56 @@ def normalize_nmap_args(value):
     return shlex.join(tokens)
 
 
+def build_host_os_fingerprint(os_matches, requested=False, minimum_accuracy=90):
+    """Preserve raw Nmap OS evidence while only accepting high-confidence family labels."""
+    if not isinstance(os_matches, (list, tuple)) or not os_matches:
+        return {
+            "status": "no_match" if requested else "not_requested",
+            "platform_family": None,
+            "nmap_name": None,
+            "accuracy": None,
+            "minimum_accuracy": minimum_accuracy,
+            "source": "Nmap OS detection",
+        }
+    match = os_matches[0] if isinstance(os_matches[0], dict) else {}
+    try:
+        accuracy = int(match.get("accuracy"))
+    except (TypeError, ValueError):
+        accuracy = None
+    platform = infer_target_platform(os_matches, minimum_accuracy=minimum_accuracy)
+    return {
+        "status": "accepted_high_confidence" if platform else "unconfirmed_low_confidence_or_unknown_family",
+        "platform_family": platform,
+        "nmap_name": str(match.get("name") or "")[:200] or None,
+        "accuracy": accuracy,
+        "minimum_accuracy": minimum_accuracy,
+        "source": "Nmap OS detection",
+    }
+
+
+def infer_target_platform(os_matches, minimum_accuracy=90):
+    """Infer a broad OS family only from a high-confidence Nmap OS match."""
+    if not isinstance(os_matches, (list, tuple)) or not os_matches:
+        return None
+    match = os_matches[0] if isinstance(os_matches[0], dict) else {}
+    try:
+        accuracy = int(match.get("accuracy"))
+    except (TypeError, ValueError):
+        return None
+    if accuracy < minimum_accuracy:
+        return None
+    os_name = str(match.get("name") or "").lower()
+    if any(token in os_name for token in ("windows", "microsoft")):
+        return "windows"
+    if "linux" in os_name:
+        return "linux"
+    if any(token in os_name for token in ("freebsd", "openbsd", "netbsd", "solaris", "unix")):
+        return "unix"
+    if any(token in os_name for token in ("mac os", "macos", "darwin")):
+        return "macos"
+    return None
+
+
 def scanned_hosts(scanner):
     """Return Nmap's resolved host list (which may contain IPs instead of the input hostname)."""
     hosts = list(scanner.all_hosts())
@@ -610,6 +660,8 @@ def parse_args(argv=None):
     parser.add_argument("--nvd-api-key", default=None,
                         help="NVD API Key (أو متغير البيئة NVD_API_KEY) - بيرفع الحد لـ 50 طلب/30 ثانية")
     parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
+    parser.add_argument("--os-detection", action="store_true",
+                        help="فعّل Nmap OS detection (-O)؛ قد يحتاج صلاحيات root/raw sockets")
     parser.add_argument("--results-per-page", type=int, default=10,
                         help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
     parser.add_argument("--http-probe", action="store_true",
@@ -633,6 +685,11 @@ def parse_args(argv=None):
         args.target = validate_target(args.target)
         args.ports = validate_ports(args.ports)
         args.nmap_args = normalize_nmap_args(args.nmap_args)
+        if args.os_detection:
+            nmap_tokens = shlex.split(args.nmap_args)
+            if "-O" not in nmap_tokens and "--osscan-guess" not in nmap_tokens:
+                nmap_tokens.append("-O")
+            args.nmap_args = shlex.join(nmap_tokens)
         if not 1 <= args.results_per_page <= 2000:
             raise ValueError("--results-per-page must be between 1 and 2000.")
         if args.output is not None and not args.output.strip():
@@ -795,17 +852,11 @@ def main():
 
             # Use only Nmap OS-match evidence when present; never infer OS from a service banner.
             os_matches = scanner[host].get("osmatch", []) if hasattr(scanner[host], "get") else []
-            target_platform = None
-            if os_matches:
-                os_name = str(os_matches[0].get("name") or "").lower()
-                if any(token in os_name for token in ("windows", "microsoft")):
-                    target_platform = "windows"
-                elif "linux" in os_name:
-                    target_platform = "linux"
-                elif any(token in os_name for token in ("freebsd", "openbsd", "netbsd", "solaris", "unix")):
-                    target_platform = "unix"
-                elif any(token in os_name for token in ("mac os", "macos", "darwin")):
-                    target_platform = "macos"
+            os_fingerprint = build_host_os_fingerprint(
+                os_matches,
+                requested=bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
+            )
+            target_platform = os_fingerprint["platform_family"]
             exploit_intelligence = build_exploit_intelligence(
                 exploits, cves, target_platform=target_platform
             )
@@ -837,6 +888,7 @@ def main():
                 web_intelligence=web_intelligence,
                 network_exposure=assess_network_exposure(port, service, product),
                 exploit_intelligence=exploit_intelligence,
+                host_os_fingerprint=os_fingerprint,
             )
             technical_risk = assess_service_risk(cves, exploits)
             asset_context = assess_asset_context(
@@ -868,6 +920,7 @@ def main():
         "resolved_hosts": hosts,
         "ports": args.ports,
         "nmap_arguments": args.nmap_args,
+        "os_detection_requested": bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
         "started_at_utc": started_at.isoformat(timespec="seconds"),
         "completed_at_utc": completed_at.isoformat(timespec="seconds"),
         "duration_seconds": round(time.monotonic() - started_monotonic, 3),

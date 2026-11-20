@@ -37,6 +37,19 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("High / Critical CVEs", html)
         self.assertIn(">1</div>", html)
 
+    def test_report_renders_host_os_fingerprint_and_escapes_it(self):
+        findings = self.sample()
+        findings[0]["host_os_fingerprint"] = {
+            "status": "accepted_high_confidence",
+            "platform_family": "linux",
+            "nmap_name": "Linux 2.6.9 - 2.6.33 <test>",
+            "accuracy": 100,
+        }
+        html = render_html_report(findings)
+        self.assertIn("Host OS fingerprint", html)
+        self.assertIn("Linux 2.6.9 - 2.6.33 &lt;test&gt; (100%)", html)
+        self.assertNotIn("Linux 2.6.9 - 2.6.33 <test>", html)
+
     def test_report_renders_risk_and_remediation_guidance(self):
         findings = self.sample()
         findings[0]["risk_assessment"] = {

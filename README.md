@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.9.0 · Report schema 1.8
+> **Current version:** Scanner 0.10.2 · Report schema 1.11
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -20,7 +20,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
-- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe manual validation guidance; exploit code is never executed.
+- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, conservative platform compatibility, product/version title relevance, and safe manual validation guidance; exploit code is never executed.
+- Optional Nmap OS fingerprinting (--os-detection) adds -O explicitly; OS-family compatibility remains a coarse research hint, not proof of exploitability.
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
 - Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
@@ -93,6 +94,14 @@ Specify ports and generate both JSON and HTML reports:
 ```bash
 python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
+
+Enable optional OS fingerprinting when you have authorization and the required privileges:
+
+```bash
+sudo python scanner.py --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
+```
+
+This option adds Nmap's -O OS-detection probe. It may require root/raw-socket privileges and can still return no reliable match. Without --os-detection, the default scan remains unchanged. ReconForge accepts only the first Nmap OS match at 90% accuracy or higher; lower-confidence or missing matches remain unknown. Broad OS-family matches are not proof of architecture or exploit compatibility.
 
 Run without NVD requests when offline or when the NVD API is unavailable:
 

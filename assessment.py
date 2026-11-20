@@ -799,7 +799,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
     return intelligence
 
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None, exploit_intelligence=None):
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None, exploit_intelligence=None, host_os_fingerprint=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -815,6 +815,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "cpe_queries_tested": cpes_tested,
             "technology_fingerprint": fingerprint or {},
         },
+        "host_os_fingerprint": host_os_fingerprint or {"status": "not_requested"},
         "http_assessment": http_assessment,
         "web_intelligence": web_intelligence,
         "network_exposure": network_exposure or [],
