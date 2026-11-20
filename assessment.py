@@ -523,7 +523,74 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
         ],
     }
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None):
+
+NETWORK_SERVICE_RULES = {
+    21: ("legacy_cleartext_service", "FTP service exposed", "medium",
+         "FTP commonly transmits credentials and data without encryption. Prefer SFTP or FTPS and restrict source networks."),
+    23: ("legacy_cleartext_service", "Telnet service exposed", "high",
+         "Telnet provides no transport encryption. Disable it and use SSH with key-based authentication."),
+    111: ("rpc_service_exposed", "RPC portmapper exposed", "medium",
+          "Restrict RPC portmapper to trusted internal networks and disable unused RPC services."),
+    135: ("windows_management_exposure", "Windows RPC endpoint mapper exposed", "medium",
+          "Limit RPC access with host/network firewalls and verify that only required management paths are reachable."),
+    139: ("file_sharing_exposure", "NetBIOS session service exposed", "medium",
+          "Restrict NetBIOS/SMB to trusted networks and disable legacy protocols where possible."),
+    445: ("file_sharing_exposure", "SMB service exposed", "medium",
+          "Restrict SMB to trusted networks, disable SMBv1, enforce signing where appropriate, and patch the host."),
+    1433: ("database_exposure", "Microsoft SQL Server port exposed", "high",
+           "Do not expose database listeners to untrusted networks; bind to private interfaces and enforce network allowlists."),
+    1521: ("database_exposure", "Oracle database listener exposed", "high",
+           "Restrict database listener access to application and administration networks; require strong authentication."),
+    3306: ("database_exposure", "MySQL/MariaDB port exposed", "high",
+           "Keep database listeners off public interfaces and allow only required application hosts."),
+    5432: ("database_exposure", "PostgreSQL port exposed", "high",
+           "Restrict PostgreSQL to trusted application/admin networks and review pg_hba.conf access rules."),
+    6379: ("database_exposure", "Redis port exposed", "high",
+           "Bind Redis to trusted interfaces, use ACL authentication, and firewall the listener; never expose it publicly."),
+    27017: ("database_exposure", "MongoDB port exposed", "high",
+            "Restrict MongoDB to private networks, enable authentication and authorization, and verify bindIp settings."),
+    9200: ("search_service_exposure", "Elasticsearch HTTP API exposed", "high",
+           "Restrict Elasticsearch to trusted networks and enable authentication/TLS; avoid direct public exposure."),
+    2375: ("container_management_exposure", "Docker remote API exposed without TLS convention", "critical",
+           "Disable unauthenticated remote Docker API access. Use a protected Unix socket or mutually authenticated TLS on a restricted management network."),
+    2376: ("container_management_exposure", "Docker remote API port exposed", "high",
+           "Restrict Docker API access to dedicated management hosts and require mutual TLS authentication."),
+    3389: ("remote_access_exposure", "RDP service exposed", "high",
+           "Place RDP behind VPN or a zero-trust gateway, enforce MFA/NLA, and restrict source IPs."),
+    5900: ("remote_access_exposure", "VNC service exposed", "high",
+           "Restrict VNC to trusted networks or a VPN and use strong authentication with encrypted transport."),
+    11211: ("cache_service_exposure", "Memcached service exposed", "high",
+            "Bind Memcached to private interfaces and block untrusted access at the network perimeter."),
+}
+
+def assess_network_exposure(port, service="", product=""):
+    """Return conservative exposure observations for well-known sensitive TCP services."""
+    try:
+        number = int(port)
+    except (TypeError, ValueError):
+        return []
+    rule = NETWORK_SERVICE_RULES.get(number)
+    if not rule:
+        return []
+    finding_id, title, severity, recommendation = rule
+    return [{
+        "id": finding_id,
+        "title": title,
+        "severity": severity,
+        "status": "exposed_service_observed",
+        "evidence": {
+            "tcp_port": number,
+            "nmap_service": str(service or "")[:80] or None,
+            "nmap_product": str(product or "")[:120] or None,
+        },
+        "recommendation": recommendation,
+        "limitations": [
+            "An open TCP port is an exposure observation, not proof of a vulnerability or successful compromise.",
+            "Confirm the service identity, intended network boundary, firewall policy, and business requirement.",
+        ],
+    }]
+
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -541,6 +608,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
         },
         "http_assessment": http_assessment,
         "web_intelligence": web_intelligence,
+        "network_exposure": network_exposure or [],
         "cve_assessment": cves,
         "searchsploit_assessment": exploits,
         "assessment_limits": [
