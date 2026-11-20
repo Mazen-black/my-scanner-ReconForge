@@ -226,5 +226,35 @@ class HTMLReportTests(unittest.TestCase):
             self.assertIn("Network Scan Report", written.read_text(encoding="utf-8"))
 
 
+    def test_report_renders_confidence_reasons_and_evidence_gaps(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["applicability"].update({
+            "applicability_confidence": "medium",
+            "exploitability_confidence": "unknown",
+            "confidence_reasons": ["Exact CPE version matched."],
+            "evidence_gaps": ["Vendor backport status is unknown."],
+        })
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "321", "title": "Example exploit", "platform": "Linux",
+            "assessment": {"relevance": "product_and_version_match", "confidence": "low"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "321"},
+            "triage": {
+                "status": "manual_review_required",
+                "applicability_confidence": "low",
+                "exploitability_confidence": "unknown",
+                "confidence_reasons": ["Title match is not target validation."],
+                "evidence_gaps": ["Build provenance is unknown."],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Applicability confidence: medium; exploitability: unknown", html)
+        self.assertIn("Exact CPE version matched.", html)
+        self.assertIn("Vendor backport status is unknown.", html)
+        self.assertIn("Title match is not target validation.", html)
+        self.assertIn("Build provenance is unknown.", html)
+
+
 if __name__ == "__main__":
     unittest.main()

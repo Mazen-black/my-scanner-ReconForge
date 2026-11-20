@@ -477,3 +477,58 @@ class NetworkExposureAssessmentTests(unittest.TestCase):
         report = build_report_entry("192.0.2.1", 3389, "open", "ms-wbt-server", "", "", [], [], [],
                                     network_exposure=finding)
         self.assertEqual(report["network_exposure"][0]["id"], "remote_access_exposure")
+
+
+class EvidenceConfidenceEngineTests(unittest.TestCase):
+    def test_exact_cpe_match_separates_applicability_from_exploitability(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [{
+            "vulnerable": True,
+            "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+        }]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["applicability_confidence"], "medium")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_sources"])
+        self.assertTrue(result["confidence_reasons"])
+        self.assertTrue(result["evidence_gaps"])
+
+    def test_version_range_match_has_explicit_evidence(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [{
+            "vulnerable": True,
+            "criteria": "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            "versionStartIncluding": "2.4.0",
+            "versionEndExcluding": "2.4.58",
+        }]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "version_match")
+        self.assertEqual(result["evidence"][0]["reason"], "version_range_match")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+
+    def test_incomplete_evidence_remains_low_and_lists_gaps(self):
+        result = assess_cve_applicability({}, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertEqual(result["applicability_confidence"], "low")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_gaps"])
+
+    def test_contextual_constraint_downgrades_confidence_and_adds_required_evidence(self):
+        base = {
+            "status": "version_match", "confidence": "medium",
+            "applicability_confidence": "medium", "exploitability_confidence": "unknown",
+            "evidence": [], "evidence_gaps": [],
+        }
+        result = apply_contextual_cve_constraints("CVE-2011-2523", base)
+        self.assertEqual(result["applicability_confidence"], "low")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_gaps"])
+        self.assertTrue(result["confidence_reasons"])
+
+    def test_exploit_title_match_never_claims_exploitability(self):
+        intel = build_exploit_intelligence([{
+            "id": "123", "title": "Apache httpd 2.4.57 example", "platform": "Linux",
+            "assessment": {"relevance": "product_and_version_match"},
+        }], [], target_platform="linux")
+        triage = intel[0]["triage"]
+        self.assertEqual(triage["applicability_confidence"], "low")
+        self.assertEqual(triage["exploitability_confidence"], "unknown")
+        self.assertTrue(triage["evidence_gaps"])

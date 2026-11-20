@@ -203,10 +203,24 @@ def assess_cve_applicability(cve, vendor, product, detected_version, part="a"):
     # NVD configuration objects are alternatives: one fully satisfied vulnerable path is sufficient.
     overall = _combine_states(root_states, "OR")
     if overall is True and matched_evidence:
+        reasons = [
+            "A complete NVD configuration path matched the detected product and version.",
+            "The matched vulnerable CPE criteria and version comparison are retained as evidence.",
+        ]
+        gaps = [
+            "Vendor backport or downstream patch status has not been verified.",
+            "Build options, runtime configuration, and network exposure have not been verified.",
+            "A service banner does not prove the installed binary is the affected build.",
+        ]
         return {
             "status": "version_match",
             "confidence": "medium",
+            "applicability_confidence": "medium",
+            "exploitability_confidence": "unknown",
             "evidence": matched_evidence,
+            "evidence_sources": ["NVD CPE configuration and version-range metadata", "Nmap service/product/version identification"],
+            "confidence_reasons": reasons,
+            "evidence_gaps": gaps,
             "limitations": [
                 "The complete evaluated NVD configuration path matched, but this is still not proof of exploitability.",
                 "Verify vendor backports, build options, platform constraints, and runtime exposure.",
@@ -217,18 +231,31 @@ def assess_cve_applicability(cve, vendor, product, detected_version, part="a"):
     # In three-valued logic, a known false branch makes an AND expression false
     # even when another environmental component is unknown (False AND Unknown = False).
     if overall is None or (overall is True and not matched_evidence):
+        gaps = list(dict.fromkeys(uncertain)) + [
+            "A complete vulnerable-product applicability path could not be established from available inventory."
+        ]
         return {
             "status": "candidate_unverified",
             "confidence": "low",
+            "applicability_confidence": "low",
+            "exploitability_confidence": "unknown",
             "evidence": [],
-            "limitations": list(dict.fromkeys(uncertain)) + [
+            "evidence_sources": ["NVD CPE configuration metadata", "Nmap service/product/version identification"],
+            "confidence_reasons": ["Available evidence is incomplete or contains unresolved configuration conditions."],
+            "evidence_gaps": gaps,
+            "limitations": gaps + [
                 "Incomplete host inventory or ambiguous NVD logic prevents a confirmed applicability match."
             ],
         }
     return {
         "status": "not_matched_by_nvd_cpe",
         "confidence": "low",
+        "applicability_confidence": "low",
+        "exploitability_confidence": "unknown",
         "evidence": [],
+        "evidence_sources": ["NVD CPE configuration and version-range metadata", "Nmap service/product/version identification"],
+        "confidence_reasons": ["The evaluated NVD configuration did not establish an applicable vulnerable-product path."],
+        "evidence_gaps": ["NVD coverage and vendor-specific backports may be incomplete or differ from upstream versioning."],
         "limitations": [
             "No complete vulnerable NVD configuration path matched the detected product/version.",
             "This is not proof the product is safe.",
@@ -264,6 +291,15 @@ def apply_contextual_cve_constraints(cve_id, applicability, summary=""):
         result["cpe_version_status"] = "version_match"
         result["status"] = "candidate_unverified"
         result["confidence"] = "low"
+        result["applicability_confidence"] = "low"
+        result["exploitability_confidence"] = "unknown"
+        result["confidence_reasons"] = list(result.get("confidence_reasons") or []) + [
+            "A contextual build/provenance condition is not established by the CPE version match."
+        ]
+        result["evidence_gaps"] = list(result.get("evidence_gaps") or []) + list(constraint.get("required_evidence") or [])
+        result["evidence_sources"] = list(dict.fromkeys(
+            list(result.get("evidence_sources") or []) + [constraint.get("source", "CVE contextual advisory metadata")]
+        ))
         result["contextual_constraint"] = dict(constraint)
         result["limitations"] = list(result.get("limitations") or []) + [
             "The NVD CPE version matched, but this CVE has an additional build/provenance condition that cannot be verified from a service banner.",
@@ -800,6 +836,18 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "status": overall_status,
                 "cve_status": triage_status,
                 "confidence": "low",
+                "applicability_confidence": "low",
+                "exploitability_confidence": "unknown",
+                "confidence_reasons": [
+                    "Exploit-DB title/platform metadata is a research lead, not target-side validation.",
+                    "A product/version title match does not establish affected build or prerequisites.",
+                ],
+                "evidence_sources": ["Local Exploit-DB title/platform metadata", "Nmap service/product/version identification"],
+                "evidence_gaps": [
+                    "Affected build and vendor patch status are unverified.",
+                    "Exploit prerequisites, architecture, configuration, and mitigations are not fully established.",
+                    "No non-invasive check has confirmed the vulnerable condition.",
+                ],
                 "meaning": overall_meaning,
             },
             "validation_guidance": [
