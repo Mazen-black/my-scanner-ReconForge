@@ -39,6 +39,7 @@ from assessment import (
     cpe22_to_cpe23,
     build_technology_fingerprint,
     assess_network_exposure,
+    build_exploit_intelligence,
 )
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -51,8 +52,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.6"
-SCANNER_VERSION = "0.7.0"
+REPORT_SCHEMA_VERSION = "1.7"
+SCANNER_VERSION = "0.8.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -758,6 +759,10 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
+            exploit_intelligence = build_exploit_intelligence(exploits, cves)
+            if exploit_intelligence:
+                print(f"  Exploit intelligence: {len(exploit_intelligence)} مرجع مع إرشادات تحقق آمنة")
+
             http_assessment = {"status": "not_requested"}
             if args.http_probe:
                 http_assessment = probe_http_metadata(host, port, port_data)
@@ -781,6 +786,7 @@ def main():
                 http_assessment=http_assessment,
                 web_intelligence=web_intelligence,
                 network_exposure=assess_network_exposure(port, service, product),
+                exploit_intelligence=exploit_intelligence,
             ))
 
     completed_at = datetime.now(timezone.utc)
