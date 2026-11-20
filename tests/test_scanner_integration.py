@@ -97,6 +97,10 @@ class HTTPProbeTests(unittest.TestCase):
         self.assertTrue(result["redirect_location_present"])
         self.assertFalse(mock_head.call_args.kwargs["allow_redirects"])
         self.assertTrue(mock_head.call_args.kwargs["verify"])
+        self.assertEqual(
+            mock_head.call_args.kwargs["headers"]["User-Agent"],
+            f"ReconForge/{scanner.SCANNER_VERSION} (authorized security assessment)",
+        )
 
     @patch("scanner.requests.head")
     def test_http_probe_skips_non_http_service(self, mock_head):
@@ -151,7 +155,78 @@ class WebIntelligenceProbeTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertFalse(mock_get.call_args.kwargs["allow_redirects"])
         self.assertTrue(mock_get.call_args.kwargs["verify"])
+        self.assertEqual(
+            mock_get.call_args.kwargs["headers"]["User-Agent"],
+            f"ReconForge/{scanner.SCANNER_VERSION} (authorized security assessment)",
+        )
         self.assertTrue(response.closed)
+
+
+class SearchsploitLookupTests(unittest.TestCase):
+    @patch("scanner.subprocess.run")
+    @patch("scanner.shutil.which", return_value="/usr/bin/searchsploit")
+    def test_missing_product_skips_searchsploit_command(self, mock_which, mock_run):
+        self.assertEqual(scanner.searchsploit_lookup("", "1.0"), [])
+        mock_run.assert_not_called()
+
+
+class IntegratedAssessmentTests(unittest.TestCase):
+    def test_cli_exposes_offline_html_and_asset_context_options(self):
+        args = scanner.parse_args([
+            "--target", "192.0.2.10", "--no-nvd", "--html-output", "scan.html",
+            "--asset-criticality", "critical", "--exposure", "internet",
+        ])
+        self.assertTrue(args.no_nvd)
+        self.assertEqual(args.html_output, "scan.html")
+        self.assertEqual(args.asset_criticality, "critical")
+        self.assertEqual(args.exposure, "internet")
+
+    @patch("scanner.write_html_report")
+    @patch("scanner.write_json_report")
+    @patch("scanner.searchsploit_lookup")
+    @patch("scanner.check_cve_nvd")
+    @patch("scanner.nmap.PortScanner")
+    @patch("scanner.requests.Session")
+    @patch("scanner.parse_args")
+    def test_no_nvd_mode_builds_json_and_html_without_network_lookup(
+        self, mock_args, mock_session, mock_port_scanner, mock_cve_lookup,
+        mock_searchsploit, mock_write_json, mock_write_html
+    ):
+        from argparse import Namespace
+        mock_args.return_value = Namespace(
+            target="127.0.0.1", ports="21", nmap_args="-sV",
+            results_per_page=10, nvd_api_key=None, no_exploitdb=True,
+            no_nvd=True, http_probe=False, web_intel=False,
+            output="offline.json", html_output="offline.html",
+            asset_criticality="high", exposure="internal",
+        )
+        class FakeScanner:
+            def scan(self, target, ports, arguments):
+                self.scan_args = (target, ports, arguments)
+            def all_hosts(self):
+                return ["127.0.0.1"]
+            def __getitem__(self, host):
+                return {"tcp": {21: {
+                    "state": "open", "name": "ftp", "product": "vsftpd",
+                    "version": "3.0.5", "cpe": [], "extrainfo": "",
+                    "tunnel": "", "method": "probed", "conf": "10",
+                }}}
+        mock_port_scanner.return_value = FakeScanner()
+        captured = {}
+        mock_write_json.side_effect = lambda filename, payload: captured.update(payload)
+        mock_write_html.return_value = "offline.html"
+
+        scanner.main()
+
+        mock_cve_lookup.assert_not_called()
+        mock_searchsploit.assert_not_called()
+        self.assertEqual(captured["findings"][0]["cve_assessment"], [])
+        self.assertIsNone(captured["findings"][0]["risk_assessment"]["score"])
+        self.assertEqual(captured["findings"][0]["risk_assessment"]["asset_context"]["asset_criticality"], "high")
+        self.assertEqual(captured["findings"][0]["remediation_guidance"]["mode"], "guidance_only")
+        mock_write_html.assert_called_once()
+        self.assertEqual(mock_write_html.call_args.args[0][0]["port"], 21)
+
 
 
 if __name__ == "__main__":
@@ -176,6 +251,8 @@ class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
             target="127.0.0.1", ports="22", nmap_args="-sV",
             results_per_page=10, nvd_api_key=None, no_exploitdb=False,
             http_probe=False, web_intel=False, output="report.json",
+            no_nvd=False, asset_criticality="unknown", exposure="unknown",
+            html_output=None,
         )
         mock_session.return_value = object()
         mock_cve_lookup.return_value = (
@@ -228,4 +305,8 @@ class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
             ["CVE-2024-12345"],
         )
         self.assertEqual(finding["exploit_intelligence"][0]["execution_status"], "not_executed")
+        self.assertEqual(finding["risk_assessment"]["score"], 57.2)
+        self.assertEqual(finding["risk_assessment"]["asset_context"]["contextual_priority_score"], 57.2)
+        self.assertEqual(finding["remediation_guidance"]["mode"], "guidance_only")
+        self.assertEqual(captured["summary"]["risk_scored_services"], 1)
         self.assertEqual(captured["summary"]["exploit_intelligence_references"], 1)

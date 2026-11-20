@@ -214,7 +214,9 @@ def assess_cve_applicability(cve, vendor, product, detected_version, part="a"):
         }
     if overall is True and not matched_evidence:
         uncertain.append("Configuration matched, but no vulnerable=true CPE for the detected product was established")
-    if overall is None or uncertain:
+    # In three-valued logic, a known false branch makes an AND expression false
+    # even when another environmental component is unknown (False AND Unknown = False).
+    if overall is None or (overall is True and not matched_evidence):
         return {
             "status": "candidate_unverified",
             "confidence": "low",

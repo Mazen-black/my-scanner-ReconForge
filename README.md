@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.8.0 · Report schema 1.7
+> **Current version:** Scanner 0.9.0 · Report schema 1.8
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -21,6 +21,11 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe manual validation guidance; exploit code is never executed.
+- Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
+- Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
+- Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
+- Generates a standalone HTML dashboard with escaped untrusted values, and can render both current versioned JSON envelopes and legacy list reports.
+- Supports `--no-nvd` for offline operation when NVD is unavailable.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
@@ -36,7 +41,10 @@ A Python-based network service scanner that combines Nmap service/version detect
 7. The report includes the service fingerprint, CVE assessment, network exposure observations, and exploit intelligence.
 8. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
 9. When `--web-intel` is enabled, bounded GET requests inspect `/`, `/robots.txt`, and `/sitemap.xml` on the same scanned host only; redirects and external asset fetching are disabled.
-10. A versioned JSON report is written for further review.
+10. Risk priority is calculated separately from CVSS; unknown applicability is discounted, non-matches are not actionable, and Exploit-DB references do not raise the score.
+11. Operator-supplied asset criticality/exposure optionally adjusts contextual review priority; unknown values remain neutral.
+12. Guidance-only remediation includes service hardening and CVE validation steps without executing changes or fabricating fixed releases.
+13. A versioned JSON report is written; `--html-output` optionally creates a standalone HTML dashboard.
 
 ## Requirements
 
@@ -80,11 +88,25 @@ Basic scan:
 python scanner.py --target 192.0.2.10
 ```
 
-Specify ports and an output file:
+Specify ports and generate both JSON and HTML reports:
 
 ```bash
-python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json
+python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
+
+Run without NVD requests when offline or when the NVD API is unavailable:
+
+```bash
+python scanner.py --target 192.0.2.10 --no-nvd --html-output offline-report.html
+```
+
+Supply asset context only when independently verified:
+
+```bash
+python scanner.py --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
+```
+
+Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Supported exposure values: `unknown`, `internal`, `internet`. Both default to `unknown`; the scanner does not infer internet reachability from an open port.
 
 Enable the optional HTTP headers and cookie review (only for recognized web services):
 
@@ -117,6 +139,12 @@ python scanner.py --target 192.0.2.10
 
 You can also pass `--nvd-api-key`, but avoid saving secrets in scripts, screenshots, shell history, or reports. Get an API key from the official [NVD API site](https://nvd.nist.gov/developers/request-an-api-key).
 
+Render an existing JSON report without running another scan (supports current versioned envelopes and legacy list reports):
+
+```bash
+python report.py report.json --output report.html
+```
+
 View all options:
 
 ```bash
@@ -139,13 +167,15 @@ Reports use a versioned JSON envelope:
 
 - `schema_version`: report format version.
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
-- `summary`: host, open-service, CVE-candidate, Searchsploit-reference, and network-exposure observation counts.
+- `summary`: host, open-service, CVE-candidate, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 - `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 - `web_intelligence` stores CMS/library hints and summary counts from the optional bounded HTML, robots, and sitemap inspection, or `not_requested` when disabled.
 - `network_exposure` lists sensitive open-service observations, their evidence, severity, and remediation guidance.
 - `exploit_intelligence` contains the integrated local Searchsploit references with official EDB links, explicit CVE-title correlations, platform/type metadata, validation guidance, and an always-explicit `not_executed` status.
+- `risk_assessment` separates technical review priority from CVSS and includes an optional operator-contextual score.
+- `remediation_guidance` contains service/CVE guidance and verification steps in `guidance_only` mode; no changes are executed.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
@@ -159,7 +189,9 @@ Reports may contain target addresses, port/service information, software version
 - The HTTP assessment checks only a single HEAD response from `/`; it does not crawl pages, inspect JavaScript, test forms, or validate application behavior.
 - Web technology labels are heuristic, based on visible metadata and asset URL patterns; versions can be missing or spoofed. The scanner does not download JavaScript, crawl the application, or verify technology runtime state.
 - Known-port exposure rules are heuristic. Services may use non-standard ports, and a port number does not conclusively identify the running service.
-- The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
+- Technical and contextual priority scores are transparent review heuristics, not CVSS or quantified business-loss estimates. Asset criticality and exposure are operator-supplied labels.
+- Remediation guidance is advisory only and must be checked against vendor documentation and change-control procedures.
+- The scanner does not exploit vulnerabilities or apply remediation and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
 

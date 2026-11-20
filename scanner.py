@@ -32,6 +32,11 @@ from datetime import datetime, timezone
 import requests
 import nmap
 
+from asset_context import assess_asset_context
+from remediation import build_remediation
+from report import write_html_report
+from risk import assess_cves, assess_service_risk
+
 from assessment import (
     assess_cve_applicability,
     build_report_entry,
@@ -52,8 +57,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.7"
-SCANNER_VERSION = "0.8.0"
+REPORT_SCHEMA_VERSION = "1.8"
+SCANNER_VERSION = "0.9.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -561,7 +566,7 @@ def probe_http_metadata(host, port, port_data):
     try:
         response = requests.head(
             url, timeout=(3, 5), allow_redirects=False, verify=True,
-            headers={"User-Agent": "ReconForge/0.4.0 (authorized security assessment)"},
+            headers={"User-Agent": f"ReconForge/{SCANNER_VERSION} (authorized security assessment)"},
         )
     except requests.exceptions.SSLError:
         return {"status": "probe_error", "error": "tls_validation_failed",
@@ -602,6 +607,14 @@ def parse_args(argv=None):
                         help="حلل HTML وCMS/JS hints وrobots.txt وsitemap.xml بطلبات محدودة لنفس الـhost")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
+    parser.add_argument("--no-nvd", action="store_true",
+                        help="تخطّى استعلامات NVD (مفيد للاختبار دون اتصال أو عند تعطل الخدمة)")
+    parser.add_argument("--html-output", default=None,
+                        help="اسم ملف تقرير HTML مستقل (اختياري)")
+    parser.add_argument("--asset-criticality", choices=("unknown", "low", "medium", "high", "critical"), default="unknown",
+                        help="أهمية الأصل حسب تقييمك؛ لا يتم استنتاجها تلقائياً")
+    parser.add_argument("--exposure", choices=("unknown", "internal", "internet"), default="unknown",
+                        help="مدى تعرض الأصل حسب معلومات مؤكدة منك؛ لا يُستنتج من المنافذ")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
     args = parser.parse_args(argv)
@@ -613,6 +626,8 @@ def parse_args(argv=None):
             raise ValueError("--results-per-page must be between 1 and 2000.")
         if args.output is not None and not args.output.strip():
             raise ValueError("--output cannot be empty.")
+        if args.html_output is not None and not args.html_output.strip():
+            raise ValueError("--html-output cannot be empty.")
     except ValueError as exc:
         parser.error(str(exc))
     return args
@@ -627,7 +642,7 @@ def _bounded_same_origin_get(url, limit):
     try:
         response = requests.get(
             url, timeout=(3, 5), allow_redirects=False, verify=True, stream=True,
-            headers={"User-Agent": "ReconForge/0.5.0 (authorized security assessment)"},
+            headers={"User-Agent": f"ReconForge/{SCANNER_VERSION} (authorized security assessment)"},
         )
     except requests.exceptions.SSLError:
         return None, "tls_validation_failed"
@@ -734,7 +749,9 @@ def main():
 
             cves = []
             cpes_tried = []
-            if version:
+            if args.no_nvd:
+                print("  تم تخطي NVD بناءً على --no-nvd")
+            elif version:
                 print(f"  بدور على CVEs لـ {product or service} {version}...")
                 cves, cpes_tried = check_cve_nvd(
                     session, port_data, api_key, limiter, args.results_per_page)
@@ -751,8 +768,11 @@ def main():
             exploits = []
             if not args.no_exploitdb:
                 print("  بدور على Exploits محلياً في Exploit-DB (searchsploit)...")
-                exploits = searchsploit_lookup(product or service, version)
-                if exploits:
+                # Generic service labels are not reliable product fingerprints.
+                exploits = searchsploit_lookup(product, version) if product else []
+                if not product:
+                    print("  مفيش product fingerprint موثوق - تم تخطي Searchsploit لتجنب نتائج غير مرتبطة")
+                elif exploits:
                     print(f"  لقيت {len(exploits)} exploit محتمل (أول 5):")
                     for e in exploits[:5]:
                         print(f"    EDB-{e['id']} - {e['title']}")
@@ -772,7 +792,9 @@ def main():
                 web_intelligence = probe_web_intelligence(host, port, port_data)
                 print(f"  Web intelligence: {web_intelligence.get('status')}")
 
-            results.append(build_report_entry(
+            # Keep technical risk, operator-supplied asset context, and remediation separate.
+            cves = assess_cves(cves)
+            entry = build_report_entry(
                 host=host,
                 port=port,
                 state=state,
@@ -787,7 +809,28 @@ def main():
                 web_intelligence=web_intelligence,
                 network_exposure=assess_network_exposure(port, service, product),
                 exploit_intelligence=exploit_intelligence,
-            ))
+            )
+            technical_risk = assess_service_risk(cves, exploits)
+            asset_context = assess_asset_context(
+                technical_risk, args.asset_criticality, args.exposure
+            )
+            entry["risk_assessment"] = {
+                **technical_risk,
+                "asset_context": asset_context,
+            }
+            entry["remediation_guidance"] = build_remediation(
+                entry["service"], cves, entry["risk_assessment"]
+            )
+            results.append(entry)
+            if technical_risk["score"] is None:
+                print("  Risk priority: Unscored (no applicable CVSS evidence)")
+            else:
+                print(f"  Risk priority: {technical_risk['level']} ({technical_risk['score']:.1f}/100)")
+            contextual_score = asset_context["contextual_priority_score"]
+            if contextual_score is None:
+                print("  Contextual priority: Unscored")
+            else:
+                print(f"  Contextual priority: {asset_context['contextual_priority']} ({contextual_score:.1f}/100)")
 
     completed_at = datetime.now(timezone.utc)
     scan_metadata = {
@@ -816,6 +859,8 @@ def main():
             "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
             "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
             "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
+            "risk_scored_services": sum(item.get("risk_assessment", {}).get("score") is not None for item in results),
+            "remediation_guidance_services": sum(bool(item.get("remediation_guidance")) for item in results),
         },
     }
     try:
@@ -824,6 +869,13 @@ def main():
         print(f"تعذر حفظ التقرير: {e}")
         sys.exit(1)
     print(f"تم حفظ النتائج في {filename}")
+    if args.html_output:
+        try:
+            html_path = write_html_report(results, args.html_output, target=target)
+        except OSError as exc:
+            print(f"تعذر حفظ تقرير HTML: {exc}")
+            sys.exit(1)
+        print(f"تم حفظ تقرير HTML في {html_path}")
 
 
 if __name__ == "__main__":
