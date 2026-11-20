@@ -117,6 +117,7 @@ Reports use a versioned JSON envelope:
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
 - `summary`: host, open-service, CVE-candidate, and Searchsploit-reference counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
+- Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
