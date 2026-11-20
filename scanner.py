@@ -790,7 +790,22 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
-            exploit_intelligence = build_exploit_intelligence(exploits, cves)
+            # Use only Nmap OS-match evidence when present; never infer OS from a service banner.
+            os_matches = scanner[host].get("osmatch", []) if hasattr(scanner[host], "get") else []
+            target_platform = None
+            if os_matches:
+                os_name = str(os_matches[0].get("name") or "").lower()
+                if any(token in os_name for token in ("windows", "microsoft")):
+                    target_platform = "windows"
+                elif "linux" in os_name:
+                    target_platform = "linux"
+                elif any(token in os_name for token in ("freebsd", "openbsd", "netbsd", "solaris", "unix")):
+                    target_platform = "unix"
+                elif any(token in os_name for token in ("mac os", "macos", "darwin")):
+                    target_platform = "macos"
+            exploit_intelligence = build_exploit_intelligence(
+                exploits, cves, target_platform=target_platform
+            )
             if exploit_intelligence:
                 print(f"  Exploit intelligence: {len(exploit_intelligence)} مرجع مع إرشادات تحقق آمنة")
 

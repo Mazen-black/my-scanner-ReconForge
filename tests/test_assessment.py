@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence, apply_contextual_cve_constraints
+from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence, apply_contextual_cve_constraints, assess_exploit_platform
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -292,6 +292,30 @@ class WebContentAnalysisTests(unittest.TestCase):
 
 
 class ExploitIntelligenceTests(unittest.TestCase):
+    def test_platform_is_unknown_when_target_os_is_not_known(self):
+        result = assess_exploit_platform("windows", None)
+        self.assertEqual(result["status"], "unknown_target_platform")
+
+    def test_platform_mismatch_is_flagged_when_target_os_is_known(self):
+        result = assess_exploit_platform("windows", "linux")
+        self.assertEqual(result["status"], "platform_mismatch_candidate")
+        self.assertEqual(result["confidence"], "medium")
+
+    def test_unix_exploit_platform_is_not_rejected_for_linux_target(self):
+        result = assess_exploit_platform("unix", "linux")
+        self.assertEqual(result["status"], "platform_family_match")
+
+    def test_exploit_intelligence_records_platform_compatibility(self):
+        result = build_exploit_intelligence(
+            [{"id": "123", "title": "Example", "platform": "windows"}],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(
+            result["platform_compatibility"]["status"],
+            "platform_mismatch_candidate",
+        )
+
     def test_adds_official_exploit_db_reference_and_cve_correlation(self):
         result = build_exploit_intelligence(
             [{"id": "12345", "title": "Apache httpd CVE-2024-12345", "type": "remote",

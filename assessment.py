@@ -647,7 +647,53 @@ def assess_network_exposure(port, service="", product=""):
     }]
 
 
-def build_exploit_intelligence(exploits, cves):
+def assess_exploit_platform(exploit_platform, target_platform=None):
+    """Compare Exploit-DB platform labels only when target OS evidence is available."""
+    raw_exploit = str(exploit_platform or "").strip().lower()
+    raw_target = str(target_platform or "").strip().lower()
+    if not raw_target:
+        return {
+            "status": "unknown_target_platform",
+            "exploit_platform": raw_exploit or None,
+            "target_platform": None,
+            "confidence": "none",
+            "meaning": "Target operating system was not reliably identified; compatibility is unknown.",
+        }
+
+    def family(value):
+        value = value.lower()
+        if any(token in value for token in ("windows", "win32", "win64")):
+            return "windows"
+        if any(token in value for token in ("linux", "ubuntu", "debian", "kali", "redhat", "fedora")):
+            return "linux"
+        if any(token in value for token in ("macos", "darwin", "osx")):
+            return "macos"
+        if any(token in value for token in ("unix", "bsd", "solaris", "aix")):
+            return "unix"
+        return None
+
+    exploit_family = family(raw_exploit)
+    target_family = family(raw_target)
+    if not exploit_family or not target_family:
+        status, confidence = "unknown_platform_family", "low"
+    elif exploit_family == target_family:
+        status, confidence = "platform_family_match", "low"
+    elif exploit_family == "unix" and target_family in ("linux", "macos"):
+        status, confidence = "platform_family_match", "low"
+    elif exploit_family == "linux" and target_family == "unix":
+        status, confidence = "platform_family_match", "low"
+    else:
+        status, confidence = "platform_mismatch_candidate", "medium"
+    return {
+        "status": status,
+        "exploit_platform": raw_exploit or None,
+        "target_platform": raw_target,
+        "confidence": confidence,
+        "meaning": "Platform labels are broad metadata; verify the exploit's actual OS and architecture requirements.",
+    }
+
+
+def build_exploit_intelligence(exploits, cves, target_platform=None):
     """Enrich local exploit references with CVE applicability context and safe triage guidance."""
     cve_by_id = {
         str(item.get("id") or "").upper(): item
@@ -699,6 +745,9 @@ def build_exploit_intelligence(exploits, cves):
                 "type": str(exploit.get("type") or "")[:80] or None,
                 "platform": str(exploit.get("platform") or "")[:80] or None,
             },
+            "platform_compatibility": assess_exploit_platform(
+                exploit.get("platform"), target_platform
+            ),
             "cve_correlation": {
                 "explicit_cve_ids_in_title": explicit_ids,
                 "matched_scanner_cve_ids": linked_ids,
@@ -720,6 +769,7 @@ def build_exploit_intelligence(exploits, cves):
             "execution_status": "not_executed",
             "limitations": [
                 "An Exploit-DB reference or title match does not prove target vulnerability or exploit reliability.",
+                "Platform compatibility is a coarse metadata comparison, not proof of OS, architecture, or exploit compatibility.",
                 "CVE correlation is based only on explicit CVE identifiers in the exploit title.",
                 "NVD CPE applicability is kept separate from exploit applicability and may omit build-specific conditions.",
                 "No exploit payload was downloaded, launched, or executed by ReconForge.",
