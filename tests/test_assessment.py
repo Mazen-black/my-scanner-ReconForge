@@ -76,6 +76,7 @@ class SearchsploitTests(unittest.TestCase):
         self.assertEqual(report["service"]["version"], "2.4.57")
         self.assertIn("assessment_limits", report)
         self.assertIn("cve_assessment", report)
+        self.assertNotIn("scan_metadata", report)
 
 
 if __name__ == "__main__":
