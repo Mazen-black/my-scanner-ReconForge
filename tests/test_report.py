@@ -102,6 +102,28 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("required_privileges: root", html)
         self.assertIn("x86_64", html)
 
+    def test_report_renders_normalized_documented_requirements(self):
+        findings = [{
+            "host": "127.0.0.1", "port": 22,
+            "service": {"name": "ssh"},
+            "searchsploit_assessment": [{"id": "779", "title": "Example"}],
+            "exploit_intelligence": [{
+                "reference": {"id": "779"},
+                "applicability_evidence": {
+                    "requirements_assessment": "documented_in_local_metadata",
+                    "normalized_requirements": {
+                        "authentication_required": {"status": "yes", "raw_value": "yes"},
+                        "required_privileges": {"level": "elevated", "raw_value": "root"},
+                        "user_interaction": {"status": "unknown", "raw_value": "maybe"},
+                    },
+                },
+            }],
+        }]
+        html = render_html_report(findings)
+        self.assertIn("authentication_required=yes", html)
+        self.assertIn("required_privileges=elevated", html)
+        self.assertNotIn("user_interaction=unknown", html)
+
     def test_report_renders_platform_compatibility_column(self):
         findings = self.sample()
         findings[0]["searchsploit_assessment"] = [{

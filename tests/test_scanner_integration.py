@@ -215,6 +215,24 @@ class WebIntelligenceProbeTests(unittest.TestCase):
 
 
 class SearchsploitLookupTests(unittest.TestCase):
+    def test_normalizes_only_explicit_known_requirement_values(self):
+        metadata = {
+            "authentication_required": {"value": "yes"},
+            "user_interaction": {"value": "maybe"},
+            "required_privileges": {"value": "root"},
+        }
+        normalized = scanner.normalize_documented_exploit_metadata(metadata)
+        self.assertEqual(normalized["authentication_required"]["status"], "yes")
+        self.assertEqual(normalized["user_interaction"]["status"], "unknown")
+        self.assertEqual(normalized["user_interaction"]["raw_value"], "maybe")
+        self.assertEqual(normalized["required_privileges"]["level"], "elevated")
+
+    def test_missing_requirement_metadata_normalizes_to_unknown(self):
+        normalized = scanner.normalize_documented_exploit_metadata({})
+        self.assertEqual(normalized["authentication_required"]["status"], "unknown")
+        self.assertEqual(normalized["user_interaction"]["status"], "unknown")
+        self.assertEqual(normalized["required_privileges"]["level"], "unknown")
+
     def test_extracts_only_allowlisted_metadata_from_local_header(self):
         import tempfile
         from pathlib import Path

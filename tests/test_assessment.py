@@ -350,6 +350,10 @@ class ExploitIntelligenceTests(unittest.TestCase):
                     "target_architecture": {"value": "x86_64", "source": "local_exploitdb_file_header", "line": 2},
                     "required_privileges": {"value": "root", "source": "local_exploitdb_file_header", "line": 3},
                 },
+                "normalized_metadata": {
+                    "required_privileges": {"level": "elevated", "raw_value": "root"},
+                    "authentication_required": {"status": "no", "raw_value": "no"},
+                },
                 "assessment": {"relevance": "product_version_title_match_manual_validation"},
             }], [], target_platform="linux"
         )[0]
@@ -358,6 +362,8 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(evidence["target_architecture"]["value"], "x86_64")
         self.assertEqual(evidence["requirements_assessment"], "documented_in_local_metadata")
         self.assertEqual(evidence["documented_requirements"]["required_privileges"]["value"], "root")
+        self.assertEqual(evidence["normalized_requirements"]["required_privileges"]["level"], "elevated")
+        self.assertEqual(evidence["normalized_requirements"]["authentication_required"]["status"], "no")
 
     def test_missing_local_metadata_stays_unknown(self):
         result = build_exploit_intelligence(

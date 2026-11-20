@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.3 · Report schema 1.12
+> **Current version:** Scanner 0.10.4 · Report schema 1.13
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -21,7 +21,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, conservative platform compatibility, product/version title relevance, and safe manual validation guidance; exploit code is never executed.
-- Reads only allowlisted metadata comments from the first 80 lines of local Exploit-DB files to report explicitly documented target architecture, authentication, privilege, and prerequisite hints; missing values remain unknown.
+- Reads only allowlisted metadata comments from the first 80 lines of local Exploit-DB files to report explicitly documented target architecture, authentication, privilege, and prerequisite hints; strict normalization maps only known values and preserves unrecognized wording as unknown raw evidence.
 - Optional Nmap OS fingerprinting (--os-detection) adds -O explicitly; OS-family compatibility remains a coarse research hint, not proof of exploitability.
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.

@@ -118,8 +118,18 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             for key, value in documented_requirements.items()
             if isinstance(value, dict) and value.get("value")
         ]
+        normalized_requirements = evidence.get("normalized_requirements") or {}
+        normalized_values = []
+        for key, value in normalized_requirements.items():
+            if not isinstance(value, dict):
+                continue
+            normalized = value.get("status") or value.get("level")
+            if normalized and normalized != "unknown":
+                normalized_values.append(f"{key}={normalized}")
         if requirement_values:
             requirements_state += " (" + "; ".join(requirement_values) + ")"
+        if normalized_values:
+            requirements_state += " [" + "; ".join(normalized_values) + "]"
         architecture_state = evidence.get("architecture_assessment", "unknown_not_inferred_from_platform_label")
         target_architecture = evidence.get("target_architecture")
         if isinstance(target_architecture, dict) and target_architecture.get("value"):

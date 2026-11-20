@@ -58,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.12"
-SCANNER_VERSION = "0.10.3"
+REPORT_SCHEMA_VERSION = "1.13"
+SCANNER_VERSION = "0.10.4"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -435,6 +435,48 @@ EXPLOIT_HEADER_FIELDS = {
 }
 
 
+def normalize_documented_exploit_metadata(metadata):
+    """Normalize only explicit, recognized values; preserve raw evidence unchanged."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+
+    def documented_boolean(field):
+        entry = metadata.get(field)
+        if not isinstance(entry, dict):
+            return {"status": "unknown", "raw_value": None}
+        raw = str(entry.get("value") or "").strip()
+        token = raw.lower()
+        if token in {"yes", "true", "required", "enabled"}:
+            status = "yes"
+        elif token in {"no", "false", "not required", "none", "disabled"}:
+            status = "no"
+        else:
+            status = "unknown"
+        return {"status": status, "raw_value": raw or None}
+
+    def documented_privileges():
+        entry = metadata.get("required_privileges")
+        if not isinstance(entry, dict):
+            return {"level": "unknown", "raw_value": None}
+        raw = str(entry.get("value") or "").strip()
+        token = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+        if token in {"root", "administrator", "admin", "system", "local system"}:
+            level = "elevated"
+        elif token in {"user", "普通用户"}:
+            level = "standard_user"
+        elif token in {"none", "no privileges", "unauthenticated"}:
+            level = "none"
+        else:
+            level = "unknown"
+        return {"level": level, "raw_value": raw or None}
+
+    return {
+        "authentication_required": documented_boolean("authentication_required"),
+        "authentication": documented_boolean("authentication"),
+        "user_interaction": documented_boolean("user_interaction"),
+        "required_privileges": documented_privileges(),
+    }
+
+
 def extract_exploit_metadata(path, exploit_root=EXPLOITDB_EXPLOITS_ROOT):
     """Read only allowlisted key/value comments from a local Exploit-DB file header.
 
@@ -526,13 +568,15 @@ def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
             # Discard titles with no meaningful product-token match instead of filling the report with noise.
             if relevance["relevance"] == "weak_or_unrelated":
                 continue
+            local_metadata = extract_exploit_metadata(row.get("Path") or "")
             out.append({
                 "id": edb,
                 "title": title,
                 "type": row.get("Type") or "",
                 "platform": row.get("Platform") or "",
                 "path": row.get("Path") or "",
-                "local_metadata": extract_exploit_metadata(row.get("Path") or ""),
+                "local_metadata": local_metadata,
+                "normalized_metadata": normalize_documented_exploit_metadata(local_metadata),
                 "assessment": relevance,
             })
             if len(out) >= limit:

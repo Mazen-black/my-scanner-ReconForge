@@ -745,6 +745,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                         "user_interaction", "requirements", "prerequisites")
             if key in local_metadata
         }
+        normalized_metadata = exploit.get("normalized_metadata") or {}
         platform_assessment = assess_exploit_platform(exploit.get("platform"), target_platform)
         relevance = source_assessment.get("relevance", "unassessed")
         if platform_assessment["status"] == "platform_mismatch_candidate":
@@ -778,6 +779,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                     else "unknown_not_documented_in_local_metadata"
                 ),
                 "documented_requirements": documented_requirements,
+                "normalized_requirements": normalized_metadata,
                 "architecture_assessment": (
                     "target_architecture_documented_in_local_metadata" if target_architecture
                     else "unknown_not_inferred_from_platform_label"
@@ -811,6 +813,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "An Exploit-DB reference or title match does not prove target vulnerability or exploit reliability.",
                 "Platform compatibility is a coarse metadata comparison, not proof of OS, architecture, or exploit compatibility.",
                 "Requirements and architecture are shown only when explicitly documented in the local Exploit-DB file header; missing metadata remains unknown.",
+                "Normalized requirement labels use strict known-value mappings; unrecognized source wording remains unknown and is retained as raw evidence.",
                 "CVE correlation is based only on explicit CVE identifiers in the exploit title.",
                 "NVD CPE applicability is kept separate from exploit applicability and may omit build-specific conditions.",
                 "No exploit payload was downloaded, launched, or executed by ReconForge.",
