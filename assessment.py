@@ -470,7 +470,7 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
             evidence.append({"type": "meta_generator", "value": generator})
             match = re.search(r"(?i)(wordpress|drupal|joomla)(?:\s+|/)?([0-9][\w.\-]*)?", generator)
             if match:
-                add(match.group(1).lower(), "cms", "meta_generator", "medium", match.group(2))
+                add({"wordpress": "WordPress", "drupal": "Drupal", "joomla": "Joomla"}[match.group(1).lower()], "cms", "meta_generator", "medium", match.group(2))
 
     all_assets = "\n".join(parser.assets)
     asset_patterns = (
@@ -478,10 +478,10 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
         (r"(?i)(?:^|[/])wp-includes[/]", "WordPress", "cms", None),
         (r"(?i)(?:^|[/])sites/default/files[/]", "Drupal", "cms", None),
         (r"(?i)(?:^|[/])media/system/js[/]", "Joomla", "cms", None),
-        (r"(?i)(?:^|[/])jquery(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "jQuery", "javascript_library", 1),
-        (r"(?i)(?:^|[/])react(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.production)?(?:\.min)?\.js", "React", "javascript_library", 1),
-        (r"(?i)(?:^|[/])vue(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "Vue.js", "javascript_library", 1),
-        (r"(?i)(?:^|[/])angular(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "Angular", "javascript_library", 1),
+        (r"(?i)(?:^|[/])jquery(?:[-.]([0-9]+(?:\.[0-9]+){0,3}))?(?:\.min)?\.js", "jQuery", "javascript_library", 1),
+        (r"(?i)(?:^|[/])react(?:[-.]([0-9]+(?:\.[0-9]+){0,3}))?(?:\.production)?(?:\.min)?\.js", "React", "javascript_library", 1),
+        (r"(?i)(?:^|[/])vue(?:[-.]([0-9]+(?:\.[0-9]+){0,3}))?(?:\.min)?\.js", "Vue.js", "javascript_library", 1),
+        (r"(?i)(?:^|[/])angular(?:[-.]([0-9]+(?:\.[0-9]+){0,3}))?(?:\.min)?\.js", "Angular", "javascript_library", 1),
     )
     for pattern, name, category, version_group in asset_patterns:
         match = re.search(pattern, all_assets)
