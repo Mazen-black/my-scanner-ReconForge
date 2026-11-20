@@ -423,6 +423,106 @@ def analyze_http_security(headers, set_cookie_headers=None, is_https=False):
     }
 
 
+
+
+
+def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
+    """Extract conservative CMS/library hints and limited robots/sitemap metadata from fetched text."""
+    from html.parser import HTMLParser
+    from urllib.parse import urlparse
+
+    class PageSignals(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.meta = []
+            self.assets = []
+            self.links = []
+        def handle_starttag(self, tag, attrs):
+            attrs = {str(k).lower(): v for k, v in attrs}
+            if tag.lower() == "meta":
+                self.meta.append(attrs)
+            for key in ("src", "href"):
+                value = attrs.get(key)
+                if value and isinstance(value, str):
+                    self.assets.append(value[:500])
+
+    parser = PageSignals()
+    try:
+        parser.feed((html or "")[:262144])
+    except Exception:
+        pass
+
+    technologies = []
+    evidence = []
+    def add(name, category, source, confidence="medium", version=None):
+        item = {"name": name, "category": category, "confidence": confidence,
+                "evidence": source}
+        if version:
+            item["version"] = version[:40]
+        if item not in technologies:
+            technologies.append(item)
+
+    for meta in parser.meta:
+        name = (meta.get("name") or "").lower()
+        content = (meta.get("content") or "").strip()
+        if name == "generator" and content:
+            generator = content[:120]
+            evidence.append({"type": "meta_generator", "value": generator})
+            match = re.search(r"(?i)(wordpress|drupal|joomla)(?:\s+|/)?([0-9][\w.\-]*)?", generator)
+            if match:
+                add(match.group(1).lower(), "cms", "meta_generator", "medium", match.group(2))
+
+    all_assets = "\n".join(parser.assets)
+    asset_patterns = (
+        (r"(?i)(?:^|[/])wp-content[/]", "WordPress", "cms", None),
+        (r"(?i)(?:^|[/])wp-includes[/]", "WordPress", "cms", None),
+        (r"(?i)(?:^|[/])sites/default/files[/]", "Drupal", "cms", None),
+        (r"(?i)(?:^|[/])media/system/js[/]", "Joomla", "cms", None),
+        (r"(?i)(?:^|[/])jquery(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "jQuery", "javascript_library", 1),
+        (r"(?i)(?:^|[/])react(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.production)?(?:\.min)?\.js", "React", "javascript_library", 1),
+        (r"(?i)(?:^|[/])vue(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "Vue.js", "javascript_library", 1),
+        (r"(?i)(?:^|[/])angular(?:[-.]([0-9][0-9a-z.\-]*))?(?:\.min)?\.js", "Angular", "javascript_library", 1),
+    )
+    for pattern, name, category, version_group in asset_patterns:
+        match = re.search(pattern, all_assets)
+        if match:
+            version = match.group(version_group) if version_group else None
+            source = "asset_url_pattern"
+            add(name, category, source, "medium" if version else "low", version)
+            evidence.append({"type": source, "technology": name,
+                             "asset_path_hint": urlparse(match.group(0)).path[:160]})
+
+    robots = {"fetched": robots_txt is not None, "disallow_directives": 0,
+              "sitemap_directives": 0}
+    if robots_txt is not None:
+        for line in (robots_txt or "").splitlines()[:2000]:
+            line = line.split("#", 1)[0].strip()
+            if ":" not in line:
+                continue
+            key, _ = line.split(":", 1)
+            if key.strip().lower() == "disallow":
+                robots["disallow_directives"] += 1
+            elif key.strip().lower() == "sitemap":
+                robots["sitemap_directives"] += 1
+
+    sitemap = {"fetched": sitemap_xml is not None, "url_count": 0}
+    if sitemap_xml is not None:
+        sitemap["url_count"] = min(len(re.findall(r"<(?:\w+:)?loc\b", sitemap_xml, re.I)), 100000)
+
+    return {
+        "status": "analyzed",
+        "technologies": technologies,
+        "evidence": evidence,
+        "robots_txt": robots,
+        "sitemap_xml": sitemap,
+        "limitations": [
+            "Technology identification uses visible HTML metadata and asset URL patterns only; it is heuristic and can be spoofed.",
+            "No JavaScript files, external hosts, or linked pages are fetched.",
+            "robots.txt and sitemap.xml are fetched only from fixed same-origin paths; discovered URLs are not crawled.",
+            "robots.txt directives are not access controls and must not be treated as authorization boundaries.",
+        ],
+    }
+
 def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
