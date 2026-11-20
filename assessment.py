@@ -265,7 +265,85 @@ def classify_exploit(row, product, version):
     }
 
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits):
+def build_technology_fingerprint(port_data):
+    """Summarize observed Nmap identity and conservative technology hints with provenance."""
+    data = port_data if isinstance(port_data, dict) else {}
+    service = str(data.get("name") or "").strip()
+    product = str(data.get("product") or "").strip()
+    version = str(data.get("version") or "").strip()
+    extrainfo = str(data.get("extrainfo") or "").strip()
+    tunnel = str(data.get("tunnel") or "").strip()
+    method = str(data.get("method") or "").strip()
+    confidence = data.get("conf")
+    cpes = [str(value) for value in (data.get("cpe") or []) if value]
+
+    observations = []
+    for field, value in (
+        ("product", product), ("service", service),
+        ("extrainfo", extrainfo), ("tunnel", tunnel),
+    ):
+        if value:
+            observations.append({"source": f"nmap.{field}", "value": value})
+
+    stack = []
+    haystacks = (
+        ("nmap.product", product, "high"),
+        ("nmap.extrainfo", extrainfo, "medium"),
+        ("nmap.service", service, "medium"),
+    )
+    rules = (
+        ("web_server", r"\\b(apache|httpd|nginx|iis|caddy|lighttpd)\\b"),
+        ("application_server", r"\\b(tomcat|jetty|wildfly|jboss|weblogic)\\b"),
+        ("php_runtime", r"\\bphp(?:/[0-9][\\w.]*)?\\b"),
+        ("openssl", r"\\bopenssl(?:/[0-9][\\w.]*)?\\b"),
+        ("openssh", r"\\bopenssh(?:_[0-9][\\w.]*)?\\b"),
+        ("database", r"\\b(mysql|mariadb|postgresql|mongodb|redis|microsoft sql server)\\b"),
+        ("reverse_proxy", r"\\b(haproxy|traefik|envoy)\\b"),
+        ("container_platform", r"\\b(docker|containerd|podman)\\b"),
+    )
+    seen = set()
+    for source, value, confidence_level in haystacks:
+        for category, pattern in rules:
+            match = re.search(pattern, value, re.I)
+            if match and (category, match.group(0).lower()) not in seen:
+                seen.add((category, match.group(0).lower()))
+                stack.append({
+                    "category": category,
+                    "technology": match.group(0),
+                    "source": source,
+                    "confidence": confidence_level,
+                })
+
+    if tunnel.lower() in ("ssl", "tls") or service.lower() in ("https", "ssl", "tls"):
+        stack.append({
+            "category": "encrypted_transport",
+            "technology": "TLS/SSL",
+            "source": "nmap.tunnel" if tunnel else "nmap.service",
+            "confidence": "medium",
+        })
+
+    return {
+        "observed": {
+            "service": service or None,
+            "product": product or None,
+            "version": version or None,
+            "extrainfo": extrainfo or None,
+            "tunnel": tunnel or None,
+            "method": method or None,
+            "nmap_confidence": confidence,
+            "cpes": cpes,
+        },
+        "evidence": observations,
+        "technology_stack": stack,
+        "limitations": [
+            "Technology labels are hints derived from Nmap service metadata, not proof of installed components.",
+            "Banners may be incomplete, modified, proxied, or intentionally misleading.",
+            "No active HTTP probing or application-layer fingerprinting is performed by this stage.",
+        ],
+    }
+
+
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -280,6 +358,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "source": "Nmap service detection",
             "cpe_queries_tested": cpes_tested,
         },
+        "technology_fingerprint": fingerprint or {},
         "cve_assessment": cves,
         "searchsploit_assessment": exploits,
         "assessment_limits": [
