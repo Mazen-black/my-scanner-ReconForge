@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
+from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -213,6 +213,42 @@ class WebContentAnalysisTests(unittest.TestCase):
     def test_empty_content_does_not_invent_technology(self):
         result = analyze_web_content("")
         self.assertEqual(result["technologies"], [])
+
+
+class ExploitIntelligenceTests(unittest.TestCase):
+    def test_adds_official_exploit_db_reference_and_cve_correlation(self):
+        result = build_exploit_intelligence(
+            [{"id": "12345", "title": "Apache httpd CVE-2024-12345", "type": "remote",
+              "platform": "linux", "assessment": {"relevance": "product_match_version_unconfirmed"}}],
+            [{"id": "CVE-2024-12345"}],
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["reference"]["url"],
+                         "https://www.exploit-db.com/exploits/12345")
+        self.assertEqual(result[0]["cve_correlation"]["matched_scanner_cve_ids"],
+                         ["CVE-2024-12345"])
+        self.assertEqual(result[0]["execution_status"], "not_executed")
+
+    def test_does_not_invent_cve_correlation(self):
+        result = build_exploit_intelligence(
+            [{"id": "123", "title": "Example exploit"}],
+            [{"id": "CVE-2024-9999"}],
+        )[0]
+        self.assertEqual(result["cve_correlation"]["status"], "no_explicit_cve_link")
+        self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], [])
+
+    def test_rejects_non_numeric_exploit_db_identifier_for_url(self):
+        result = build_exploit_intelligence(
+            [{"id": "../../etc/passwd", "title": "Example"}], []
+        )[0]
+        self.assertIsNone(result["reference"]["url"])
+
+    def test_report_contains_exploit_intelligence(self):
+        report = build_report_entry(
+            "127.0.0.1", 22, "open", "ssh", "OpenSSH", "9.0", [], [], [],
+            exploit_intelligence=[{"execution_status": "not_executed"}],
+        )
+        self.assertEqual(report["exploit_intelligence"][0]["execution_status"], "not_executed")
 
 
 if __name__ == "__main__":
