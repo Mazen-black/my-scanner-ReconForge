@@ -16,15 +16,18 @@
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import nmap
@@ -46,6 +49,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
+REPORT_SCHEMA_VERSION = "1.1"
+SCANNER_VERSION = "0.2.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -447,21 +452,119 @@ def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
     return out
 
 
-def parse_args():
+def validate_target(value):
+    """Accept one IP address, CIDR network, or DNS hostname; reject option/shell-like input."""
+    target = (value or "").strip()
+    if not target or target != value or any(ch.isspace() or ord(ch) < 32 for ch in target):
+        raise ValueError("Target must be a single IP, CIDR network, or hostname without whitespace.")
+    if target.startswith("-") or "://" in target or any(ch in target for ch in ";|&`$<>\\\\"):
+        raise ValueError("Target contains unsupported characters.")
+    try:
+        ipaddress.ip_address(target)
+        return target
+    except ValueError:
+        pass
+    try:
+        ipaddress.ip_network(target, strict=False)
+        return target
+    except ValueError:
+        pass
+    hostname = target[:-1] if target.endswith(".") else target
+    if len(hostname) > 253 or not hostname:
+        raise ValueError("Hostname length is invalid.")
+    labels = hostname.split(".")
+    label_re = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+    if not all(label_re.fullmatch(label) for label in labels):
+        raise ValueError("Target is not a valid IP, CIDR network, or DNS hostname.")
+    return target
+
+
+def validate_ports(value):
+    """Validate a comma-separated list of TCP port numbers/ranges."""
+    ports = (value or "").strip()
+    if not ports or ports != value:
+        raise ValueError("Ports cannot be empty or contain surrounding whitespace.")
+    for item in ports.split(","):
+        if not re.fullmatch(r"\\d+(?:-\\d+)?", item):
+            raise ValueError(f"Invalid port expression: {item!r}")
+        parts = [int(part) for part in item.split("-")]
+        if any(port < 1 or port > 65535 for port in parts):
+            raise ValueError(f"Port numbers must be between 1 and 65535: {item!r}")
+        if len(parts) == 2 and parts[0] > parts[1]:
+            raise ValueError(f"Port range start exceeds end: {item!r}")
+    return ports
+
+
+def normalize_nmap_args(value):
+    """Parse and safely re-quote user-supplied Nmap arguments for python-nmap's shell command."""
+    try:
+        tokens = shlex.split(value or "")
+    except ValueError as exc:
+        raise ValueError(f"Invalid --nmap-args quoting: {exc}") from exc
+    if not tokens:
+        raise ValueError("--nmap-args cannot be empty.")
+    if any(any(ord(ch) < 32 for ch in token) for token in tokens):
+        raise ValueError("--nmap-args cannot contain control characters.")
+    return shlex.join(tokens)
+
+
+def scanned_hosts(scanner):
+    """Return Nmap's resolved host list (which may contain IPs instead of the input hostname)."""
+    hosts = list(scanner.all_hosts())
+    if not hosts:
+        raise RuntimeError("Nmap did not return any hosts. Check target reachability and scan options.")
+    return hosts
+
+
+def write_json_report(filename, results):
+    """Write reports atomically so an interrupted scan cannot leave a truncated JSON file."""
+    output_path = os.path.abspath(filename)
+    output_dir = os.path.dirname(output_path) or os.curdir
+    os.makedirs(output_dir, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=output_dir,
+            prefix=".reconforge-", suffix=".tmp", delete=False
+        ) as handle:
+            temp_path = handle.name
+            json.dump(results, handle, indent=4, ensure_ascii=False)
+            handle.write("\\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, output_path)
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise
+
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="بورت سكانر محسّن: nmap + CVEs من NVD + بحث Exploit-DB محلي")
     parser.add_argument("--target", required=True, help="الـ IP أو الدومين المستهدف")
-    parser.add_argument("--ports", default="1-1000", help="رينج البورتات (مثال: 1-1000)")
+    parser.add_argument("--ports", default="1-1000", help="رينج البورتات (مثال: 1-1000 أو 22,80,443)")
     parser.add_argument("--nvd-api-key", default=None,
                         help="NVD API Key (أو متغير البيئة NVD_API_KEY) - بيرفع الحد لـ 50 طلب/30 ثانية")
     parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
     parser.add_argument("--results-per-page", type=int, default=10,
-                        help="عدد نتائج NVD لكل استعلام (الافتراضي: 10)")
+                        help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    try:
+        args.target = validate_target(args.target)
+        args.ports = validate_ports(args.ports)
+        args.nmap_args = normalize_nmap_args(args.nmap_args)
+        if not 1 <= args.results_per_page <= 2000:
+            raise ValueError("--results-per-page must be between 1 and 2000.")
+        if args.output is not None and not args.output.strip():
+            raise ValueError("--output cannot be empty.")
+    except ValueError as exc:
+        parser.error(str(exc))
+    return args
 
 
 def main():
@@ -485,12 +588,22 @@ def main():
         print("تأكد إن التارجت متصل وإنك شغال بصلاحيات sudo")
         sys.exit(1)
 
-    if target not in scanner.all_hosts():
-        print("التارجت مش بيرد أو مش موجود - تأكد من الـ IP والاتصال")
+    try:
+        hosts = scanned_hosts(scanner)
+    except RuntimeError as e:
+        print(str(e))
         sys.exit(1)
 
     results = []
-    for host in scanner.all_hosts():
+    scan_metadata = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "scanner_version": SCANNER_VERSION,
+        "requested_target": target,
+        "ports": args.ports,
+        "nmap_arguments": args.nmap_args,
+        "started_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    for host in hosts:
         try:
             ports = scanner[host].all_tcp()
         except (AttributeError, KeyError):
@@ -542,12 +655,17 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
+                scan_metadata=scan_metadata,
             ))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = args.output or f"scan_{target}_{timestamp}.json"
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=4, ensure_ascii=False)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
+    safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target).strip("._") or "target"
+    filename = args.output or f"scan_{safe_target}_{timestamp}.json"
+    try:
+        write_json_report(filename, results)
+    except OSError as e:
+        print(f"تعذر حفظ التقرير: {e}")
+        sys.exit(1)
     print(f"تم حفظ النتائج في {filename}")
 
 
