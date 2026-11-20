@@ -118,6 +118,7 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             f'<td>{_e(assessment.get("relevance", "unassessed"))}</td>'
             f'<td>{_e(assessment.get("confidence", "low"))}</td>'
             f'<td>{_e(triage.get("status", "manual_review_required"))}</td>'
+            f'<td>{_e(platform_state)}</td>'
             f'<td>{_e(cve_state)}'
             + (f'<div class="muted">{_e(", ".join(correlation.get("matched_scanner_cve_ids") or []))}</div>' if correlation.get("matched_scanner_cve_ids") else '')
             + '</td>'

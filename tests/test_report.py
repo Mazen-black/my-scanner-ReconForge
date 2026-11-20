@@ -65,6 +65,22 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Restrict access to approved networks.", html)
         self.assertIn("Re-scan from the approved test network.", html)
 
+    def test_report_renders_platform_compatibility_column(self):
+        findings = self.sample()
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "123", "title": "Example exploit", "platform": "windows",
+            "assessment": {"relevance": "product_match_version_unconfirmed", "confidence": "low"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "123"},
+            "platform_compatibility": {"status": "platform_mismatch_candidate"},
+            "triage": {"status": "manual_cve_correlation_required"},
+            "cve_correlation": {"status": "no_explicit_cve_link"},
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Platform compatibility", html)
+        self.assertIn("platform_mismatch_candidate", html)
+
     def test_report_shows_contextual_cve_constraints_and_exploit_triage(self):
         findings = self.sample()
         findings[0]["cve_assessment"][0]["applicability"] = {
