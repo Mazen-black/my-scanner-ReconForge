@@ -19,7 +19,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Optional web intelligence (`--web-intel`) analyzes a bounded root HTML response for CMS/JavaScript-library hints and checks fixed same-origin `robots.txt` and `sitemap.xml` paths.
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
-- Optionally searches the local Exploit-DB database with `searchsploit`.\n- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe manual validation guidance; exploit code is never executed.
+- Optionally searches the local Exploit-DB database with `searchsploit`.
+- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe manual validation guidance; exploit code is never executed.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
@@ -28,16 +29,14 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 1. Nmap identifies open ports and service/version details on the specified target.
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
-3. Nmap metadata is normalized into observed identity fields and conservative technology hints with evidence provenance.
-4. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
-5. Known sensitive service ports are mapped to conservative network-exposure observations and hardening recommendations; an open port alone is not labelled an exploitable vulnerability.
-6. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.\n7. Exploit intelligence links numeric EDB identifiers to the official Exploit-DB record and correlates only explicit CVE identifiers found in the title with CVEs already returned for that service.\n8. The report includes validation prerequisites and clearly marks every reference as not executed.
-9. Exploit references are enriched with official EDB links and explicit CVE-title correlation, then included in the service finding; every reference remains marked `not_executed`.
-10. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
-11. When `--web-intel` is enabled, bounded GET requests inspect `/`, `/robots.txt`, and `/sitemap.xml` on the same scanned host only; redirects and external asset fetching are disabled.
-12. A JSON report is written for further review.
-
-CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
+3. NVD configuration trees are evaluated with conservative three-valued logic, preserving nested AND, OR, and negate conditions.
+4. Known sensitive service ports produce network-exposure observations with evidence and hardening recommendations; an open port alone is not labelled an exploitable vulnerability.
+5. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
+6. Exploit intelligence enriches those references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe validation guidance. Every reference is marked `not_executed`.
+7. The report includes the service fingerprint, CVE assessment, network exposure observations, and exploit intelligence.
+8. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
+9. When `--web-intel` is enabled, bounded GET requests inspect `/`, `/robots.txt`, and `/sitemap.xml` on the same scanned host only; redirects and external asset fetching are disabled.
+10. A versioned JSON report is written for further review.
 
 ## Requirements
 
@@ -145,7 +144,8 @@ Reports use a versioned JSON envelope:
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 - `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 - `web_intelligence` stores CMS/library hints and summary counts from the optional bounded HTML, robots, and sitemap inspection, or `not_requested` when disabled.
-- `network_exposure` lists sensitive open-service observations, their evidence, severity, and remediation guidance.\n- `exploit_intelligence` contains the integrated local Searchsploit references with official EDB links, explicit CVE-title correlations, platform/type metadata, validation guidance, and an always-explicit `not_executed` status.
+- `network_exposure` lists sensitive open-service observations, their evidence, severity, and remediation guidance.
+- `exploit_intelligence` contains the integrated local Searchsploit references with official EDB links, explicit CVE-title correlations, platform/type metadata, validation guidance, and an always-explicit `not_executed` status.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
