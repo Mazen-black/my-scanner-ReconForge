@@ -4,6 +4,46 @@ from unittest.mock import patch
 import scanner
 
 
+class InputValidationTests(unittest.TestCase):
+    def test_accepts_ip_hostname_and_cidr(self):
+        self.assertEqual(scanner.validate_target("192.0.2.10"), "192.0.2.10")
+        self.assertEqual(scanner.validate_target("lab.example.org"), "lab.example.org")
+        self.assertEqual(scanner.validate_target("192.0.2.0/24"), "192.0.2.0/24")
+
+    def test_rejects_url_shell_and_option_like_targets(self):
+        for target in ("https://example.org", "-Pn", "host;id", "host name"):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError):
+                    scanner.validate_target(target)
+
+    def test_validates_port_lists_and_ranges(self):
+        self.assertEqual(scanner.validate_ports("22,80,443,8000-8100"), "22,80,443,8000-8100")
+        for ports in ("0", "65536", "80-", "90-80", "22;id", "1,,2"):
+            with self.subTest(ports=ports):
+                with self.assertRaises(ValueError):
+                    scanner.validate_ports(ports)
+
+    def test_nmap_arguments_are_shell_quoted(self):
+        normalized = scanner.normalize_nmap_args('-sV --script "safe script"')
+        self.assertIn("-sV", normalized)
+        self.assertIn("'safe script'", normalized)
+        with self.assertRaises(ValueError):
+            scanner.normalize_nmap_args('"unterminated')
+
+    def test_scanned_hosts_uses_resolved_hosts_not_input_hostname(self):
+        class FakeScanner:
+            def all_hosts(self):
+                return ["203.0.113.8"]
+        self.assertEqual(scanner.scanned_hosts(FakeScanner()), ["203.0.113.8"])
+
+    def test_empty_scan_result_is_reported(self):
+        class FakeScanner:
+            def all_hosts(self):
+                return []
+        with self.assertRaises(RuntimeError):
+            scanner.scanned_hosts(FakeScanner())
+
+
 class CheckCVEIntegrationTests(unittest.TestCase):
     @patch("scanner.nvd_fetch")
     def test_nvd_result_is_assessed_against_detected_version(self, mock_fetch):
