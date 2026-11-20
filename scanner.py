@@ -58,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.9"
-SCANNER_VERSION = "0.10.0"
+REPORT_SCHEMA_VERSION = "1.10"
+SCANNER_VERSION = "0.10.1"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -790,6 +790,9 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
+            # Finalize NVD applicability before correlating exploit references with CVEs.
+            cves = assess_cves(cves)
+
             # Use only Nmap OS-match evidence when present; never infer OS from a service banner.
             os_matches = scanner[host].get("osmatch", []) if hasattr(scanner[host], "get") else []
             target_platform = None
@@ -819,7 +822,6 @@ def main():
                 print(f"  Web intelligence: {web_intelligence.get('status')}")
 
             # Keep technical risk, operator-supplied asset context, and remediation separate.
-            cves = assess_cves(cves)
             entry = build_report_entry(
                 host=host,
                 port=port,

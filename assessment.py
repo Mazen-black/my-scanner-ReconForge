@@ -717,6 +717,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "applicability_status": applicability.get("status", "candidate_unverified"),
                 "confidence": applicability.get("confidence", "low"),
                 "cvss": cve.get("cvss"),
+                "review_priority": cve.get("risk_priority"),
                 "contextual_constraint": applicability.get("contextual_constraint"),
             })
         if not explicit_ids:
@@ -736,6 +737,20 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
             triage_status = "cve_not_matched_by_nvd_cpe"
         valid_edb_id = edb_id if re.fullmatch(r"\d{1,8}", edb_id) else None
         source_assessment = (exploit.get("assessment") or {}).copy()
+        platform_assessment = assess_exploit_platform(exploit.get("platform"), target_platform)
+        relevance = source_assessment.get("relevance", "unassessed")
+        if platform_assessment["status"] == "platform_mismatch_candidate":
+            overall_status = "platform_mismatch_review"
+            overall_meaning = "Exploit-DB platform label conflicts with the observed target OS family; treat as likely irrelevant until independently explained."
+        elif relevance == "product_match_different_version_in_title":
+            overall_status = "different_version_candidate"
+            overall_meaning = "The exploit title names a different product version; do not treat it as applicable to the observed version."
+        elif relevance == "product_and_version_match":
+            overall_status = "product_version_title_match_manual_validation"
+            overall_meaning = "Product and version text match the title, but build, prerequisites, configuration, architecture, and reliability remain unverified."
+        else:
+            overall_status = triage_status
+            overall_meaning = "Research lead only; product/version/platform applicability is not confirmed."
         intelligence.append({
             "reference": {
                 "source": "Exploit-DB",
@@ -745,9 +760,14 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "type": str(exploit.get("type") or "")[:80] or None,
                 "platform": str(exploit.get("platform") or "")[:80] or None,
             },
-            "platform_compatibility": assess_exploit_platform(
-                exploit.get("platform"), target_platform
-            ),
+            "platform_compatibility": platform_assessment,
+            "applicability_evidence": {
+                "product_version_relevance": relevance,
+                "title_version_match": bool((source_assessment.get("evidence") or {}).get("version_text_match")),
+                "title_version_candidates": (source_assessment.get("evidence") or {}).get("version_candidates_in_title", []),
+                "requirements_assessment": "unknown_not_inferred_from_exploit_title",
+                "architecture_assessment": "unknown_not_inferred_from_platform_label",
+            },
             "cve_correlation": {
                 "explicit_cve_ids_in_title": explicit_ids,
                 "matched_scanner_cve_ids": linked_ids,
@@ -756,9 +776,10 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
             },
             "source_assessment": source_assessment,
             "triage": {
-                "status": triage_status,
+                "status": overall_status,
+                "cve_status": triage_status,
                 "confidence": "low",
-                "meaning": "Research relevance only; this is not a vulnerability confirmation.",
+                "meaning": overall_meaning,
             },
             "validation_guidance": [
                 "Confirm the vendor advisory's affected product, exact version, build provenance, and platform.",

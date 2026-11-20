@@ -305,6 +305,43 @@ class ExploitIntelligenceTests(unittest.TestCase):
         result = assess_exploit_platform("unix", "linux")
         self.assertEqual(result["status"], "platform_family_match")
 
+    def test_platform_mismatch_changes_overall_exploit_triage(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "123", "title": "Example Product 1.0 exploit",
+                "platform": "Windows",
+                "assessment": {
+                    "relevance": "product_and_version_match",
+                    "confidence": "low",
+                    "evidence": {"version_text_match": True, "version_candidates_in_title": ["1.0"]},
+                },
+            }],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(result["triage"]["status"], "platform_mismatch_review")
+        self.assertEqual(result["triage"]["cve_status"], "manual_cve_correlation_required")
+        self.assertEqual(
+            result["applicability_evidence"]["requirements_assessment"],
+            "unknown_not_inferred_from_exploit_title",
+        )
+
+    def test_different_version_in_exploit_title_is_not_treated_as_applicable(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "124", "title": "Example Product 2.0 remote exploit",
+                "platform": "Linux",
+                "assessment": {
+                    "relevance": "product_match_different_version_in_title",
+                    "confidence": "low",
+                    "evidence": {"version_text_match": False, "version_candidates_in_title": ["2.0"]},
+                },
+            }],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(result["triage"]["status"], "different_version_candidate")
+
     def test_exploit_intelligence_records_platform_compatibility(self):
         result = build_exploit_intelligence(
             [{"id": "123", "title": "Example", "platform": "windows"}],
@@ -336,6 +373,23 @@ class ExploitIntelligenceTests(unittest.TestCase):
         )[0]
         self.assertEqual(result["cve_correlation"]["status"], "no_explicit_cve_link")
         self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], [])
+
+    def test_cve_correlation_carries_separate_review_priority_evidence(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "125", "title": "Example CVE-2024-12345",
+                "assessment": {"relevance": "product_match_version_unconfirmed"},
+            }],
+            [{
+                "id": "CVE-2024-12345", "cvss": 8.8,
+                "applicability": {"status": "candidate_unverified", "confidence": "low"},
+                "risk_priority": {"priority": "Medium", "score": 42.0},
+            }],
+        )[0]
+        linked = result["cve_correlation"]["matched_cve_applicability"][0]
+        self.assertEqual(linked["applicability_status"], "candidate_unverified")
+        self.assertEqual(linked["review_priority"]["score"], 42.0)
+        self.assertEqual(linked["review_priority"]["priority"], "Medium")
 
     def test_cve_correlation_preserves_unverified_applicability(self):
         result = build_exploit_intelligence(

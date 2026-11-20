@@ -74,12 +74,18 @@ class HTMLReportTests(unittest.TestCase):
         findings[0]["exploit_intelligence"] = [{
             "reference": {"id": "123"},
             "platform_compatibility": {"status": "platform_mismatch_candidate"},
+            "applicability_evidence": {
+                "requirements_assessment": "unknown_not_inferred_from_exploit_title",
+                "architecture_assessment": "unknown_not_inferred_from_platform_label",
+            },
             "triage": {"status": "manual_cve_correlation_required"},
             "cve_correlation": {"status": "no_explicit_cve_link"},
         }]
         html = render_html_report(findings)
         self.assertIn("Platform compatibility", html)
         self.assertIn("platform_mismatch_candidate", html)
+        self.assertIn("Requirements / architecture", html)
+        self.assertIn("unknown_not_inferred_from_exploit_title", html)
 
     def test_report_shows_contextual_cve_constraints_and_exploit_triage(self):
         findings = self.sample()

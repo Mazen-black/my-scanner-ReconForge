@@ -110,6 +110,9 @@ def _exploit_rows(exploits, intelligence_by_id=None):
         correlation = enriched.get("cve_correlation") or {}
         cve_state = correlation.get("status", "not_correlated")
         platform_state = (enriched.get("platform_compatibility") or {}).get("status", "unknown_target_platform")
+        evidence = enriched.get("applicability_evidence") or {}
+        requirements_state = evidence.get("requirements_assessment", "unknown_not_inferred_from_exploit_title")
+        architecture_state = evidence.get("architecture_assessment", "unknown_not_inferred_from_platform_label")
         rows.append(
             '<tr>'
             f'<td>{_e(exploit.get("id"))}</td>'
@@ -119,12 +122,13 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             f'<td>{_e(assessment.get("confidence", "low"))}</td>'
             f'<td>{_e(triage.get("status", "manual_review_required"))}</td>'
             f'<td>{_e(platform_state)}</td>'
+            f'<td>{_e(requirements_state)} / {_e(architecture_state)}</td>'
             f'<td>{_e(cve_state)}'
             + (f'<div class="muted">{_e(", ".join(correlation.get("matched_scanner_cve_ids") or []))}</div>' if correlation.get("matched_scanner_cve_ids") else '')
             + '</td>'
             '</tr>'
         )
-    return "".join(rows) or '<tr><td colspan="8" class="empty">No matching Exploit-DB entries recorded.</td></tr>'
+    return "".join(rows) or '<tr><td colspan="9" class="empty">No matching Exploit-DB entries recorded.</td></tr>'
 
 
 
@@ -254,7 +258,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <section><h2>CVE Assessment</h2><p class="muted">CVSS base severity and ReconForge review priority are separate. Priority discounts unverified applicability; it does not prove exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>CVE</th><th>CVSS Severity</th><th>CVSS</th><th>Review Priority</th><th>Applicability</th><th>Summary</th></tr></thead>
 <tbody>{_cve_rows(cves)}</tbody></table></div></section>
-<section><h2>Exploit-DB References</h2><p class="muted">Exploit references are research leads. Triage and CVE correlation do not establish exploitability.</p><div class="table-wrap"><table><thead><tr><th>EDB ID</th><th>Title</th><th>Platform</th><th>Relevance</th><th>Confidence</th><th>Triage</th><th>Platform compatibility</th><th>CVE correlation</th></tr></thead>
+<section><h2>Exploit-DB References</h2><p class="muted">Exploit references are research leads. Triage and CVE correlation do not establish exploitability.</p><div class="table-wrap"><table><thead><tr><th>EDB ID</th><th>Title</th><th>Platform</th><th>Relevance</th><th>Confidence</th><th>Triage</th><th>Platform compatibility</th><th>Requirements / architecture</th><th>CVE correlation</th></tr></thead>
 <tbody>{_exploit_rows(exploits, exploit_intelligence_by_id)}</tbody></table></div></section>
 <section><h2>Remediation Guidance</h2><p class="muted">Advisory guidance only. ReconForge does not execute changes, does not invent fixed versions, and requires vendor/change-control validation.</p>
 {_remediation_sections(results)}</section>
