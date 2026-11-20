@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
+from assessment import analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -144,6 +144,42 @@ class TechnologyFingerprintTests(unittest.TestCase):
         fingerprint = build_technology_fingerprint({"name": "ssh", "product": "OpenSSH"})
         report = build_report_entry("127.0.0.1", 22, "open", "ssh", "OpenSSH", "", [], [], [], fingerprint)
         self.assertIn("technology_fingerprint", report["identification_evidence"])
+
+
+class HTTPSecurityAssessmentTests(unittest.TestCase):
+    def test_reports_missing_security_headers(self):
+        result = analyze_http_security({}, is_https=True)
+        ids = {finding["id"] for finding in result["findings"]}
+        self.assertIn("missing_content_security_policy", ids)
+        self.assertIn("missing_strict_transport_security", ids)
+        self.assertEqual(result["status"], "analyzed")
+
+    def test_detects_cookie_flags_without_retaining_cookie_value(self):
+        result = analyze_http_security(
+            {"Content-Security-Policy": "default-src 'self'"},
+            ["sessionid=TOP_SECRET; Path=/; SameSite=Lax"], is_https=True)
+        self.assertEqual(result["cookies"][0]["name"], "sessionid")
+        self.assertFalse(result["cookies"][0]["secure"])
+        self.assertFalse(result["cookies"][0]["httponly"])
+        self.assertNotIn("TOP_SECRET", repr(result))
+
+    def test_accepts_secure_cookie_attributes(self):
+        result = analyze_http_security(
+            {"X-Content-Type-Options": "nosniff", "Strict-Transport-Security": "max-age=31536000"},
+            ["session=hidden; Secure; HttpOnly; SameSite=Strict"], is_https=True)
+        self.assertEqual(result["cookies"][0]["samesite"], "Strict")
+        self.assertTrue(result["cookies"][0]["secure"])
+        self.assertTrue(result["cookies"][0]["httponly"])
+
+    def test_flags_permissive_csp_directives(self):
+        result = analyze_http_security(
+            {"Content-Security-Policy": "default-src *; script-src 'unsafe-inline'"})
+        self.assertIn("csp_permissive_directives", {item["id"] for item in result["findings"]})
+
+    def test_report_entry_has_optional_http_assessment(self):
+        report = build_report_entry("127.0.0.1", 80, "open", "http", "", "", [], [], [],
+                                    http_assessment={"status": "not_requested"})
+        self.assertEqual(report["http_assessment"]["status"], "not_requested")
 
 
 if __name__ == "__main__":
