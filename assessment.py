@@ -343,7 +343,87 @@ def build_technology_fingerprint(port_data):
     }
 
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None):
+def analyze_http_security(headers, set_cookie_headers=None, is_https=False):
+    """Analyze HTTP hardening headers and cookie attributes without retaining cookie values."""
+    normalized = {str(key).lower(): str(value).strip() for key, value in (headers or {}).items()}
+    findings = []
+    checks = (
+        ("content-security-policy", "Content-Security-Policy", "medium", "Define a restrictive Content Security Policy to reduce script injection impact."),
+        ("x-content-type-options", "X-Content-Type-Options", "low", "Set X-Content-Type-Options: nosniff."),
+        ("x-frame-options", "X-Frame-Options", "low", "Set X-Frame-Options or use CSP frame-ancestors to control framing."),
+        ("referrer-policy", "Referrer-Policy", "low", "Set an explicit Referrer-Policy appropriate for the application."),
+        ("permissions-policy", "Permissions-Policy", "informational", "Consider restricting browser features that the application does not need."),
+    )
+    for key, label, severity, recommendation in checks:
+        value = normalized.get(key)
+        if not value:
+            findings.append({"id": f"missing_{key.replace('-', '_')}", "title": f"Missing {label}",
+                             "severity": severity, "status": "not_observed", "evidence": None,
+                             "recommendation": recommendation})
+        elif key == "content-security-policy":
+            lowered = value.lower()
+            weak = [token for token in ("'unsafe-inline'", "'unsafe-eval'", "*") if token in lowered]
+            if weak:
+                findings.append({"id": "csp_permissive_directives", "title": "Potentially permissive Content Security Policy",
+                                 "severity": "low", "status": "review", "evidence": {"directives_to_review": weak},
+                                 "recommendation": "Review broad CSP sources and unsafe script directives; validate against application requirements."})
+        elif key == "x-content-type-options" and value.lower() != "nosniff":
+            findings.append({"id": "weak_x_content_type_options", "title": "Unexpected X-Content-Type-Options value",
+                             "severity": "low", "status": "review", "evidence": value[:120],
+                             "recommendation": "Use the nosniff value."})
+
+    if is_https and "strict-transport-security" not in normalized:
+        findings.append({"id": "missing_strict_transport_security", "title": "Missing Strict-Transport-Security",
+                         "severity": "low", "status": "not_observed", "evidence": None,
+                         "recommendation": "Consider HSTS after confirming HTTPS is correctly deployed across the intended host scope."})
+    elif "strict-transport-security" in normalized and not re.search(
+            r"(?i)(?:^|;)\s*max-age\s*=\s*\d+", normalized["strict-transport-security"]):
+        findings.append({"id": "hsts_missing_max_age", "title": "HSTS max-age is missing or invalid",
+                         "severity": "low", "status": "review", "evidence": normalized["strict-transport-security"][:160],
+                         "recommendation": "Set a deliberate max-age after validating HTTPS deployment."})
+
+    cookies = []
+    for raw_cookie in set_cookie_headers or []:
+        parts = [part.strip() for part in str(raw_cookie).split(";") if part.strip()]
+        if not parts:
+            continue
+        cookie_name = parts[0].split("=", 1)[0].strip()
+        attrs = {part.split("=", 1)[0].strip().lower() for part in parts[1:]}
+        same_site = next((part.split("=", 1)[1].strip() for part in parts[1:]
+                          if "=" in part and part.split("=", 1)[0].strip().lower() == "samesite"), None)
+        cookie = {"name": cookie_name[:100] or "(unnamed)", "secure": "secure" in attrs,
+                  "httponly": "httponly" in attrs, "samesite": same_site}
+        cookies.append(cookie)
+        checks_cookie = (
+            ("secure", is_https, "cookie_missing_secure", "Cookie missing Secure attribute",
+             "Set Secure on cookies intended to be sent only over HTTPS."),
+            ("httponly", True, "cookie_missing_httponly", "Cookie missing HttpOnly attribute",
+             "Set HttpOnly when client-side JavaScript does not need to read the cookie."),
+            ("samesite", True, "cookie_missing_samesite", "Cookie missing SameSite attribute",
+             "Choose an appropriate SameSite policy based on application flows."),
+        )
+        for attr, applicable, finding_id, title, recommendation in checks_cookie:
+            if applicable and not cookie[attr]:
+                findings.append({"id": finding_id, "title": title, "severity": "low", "status": "review",
+                                 "evidence": {"cookie_name": cookie["name"]}, "recommendation": recommendation})
+
+    return {
+        "status": "analyzed",
+        "http_headers_observed": sorted(normalized.keys()),
+        "server_banner": normalized.get("server"),
+        "powered_by": normalized.get("x-powered-by"),
+        "cookies": cookies,
+        "findings": findings,
+        "limitations": [
+            "Only response headers from a single HEAD request to / were inspected.",
+            "Missing hardening headers are configuration observations, not proof of an exploitable vulnerability.",
+            "Cookie values are never stored in this report.",
+            "No redirects, crawling, form submissions, or active vulnerability payloads are used.",
+        ],
+    }
+
+
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -359,6 +439,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "cpe_queries_tested": cpes_tested,
             "technology_fingerprint": fingerprint or {},
         },
+        "http_assessment": http_assessment,
         "cve_assessment": cves,
         "searchsploit_assessment": exploits,
         "assessment_limits": [
