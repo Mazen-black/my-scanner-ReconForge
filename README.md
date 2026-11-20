@@ -12,6 +12,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 - Uses Nmap for port scanning and service/version detection.
 - Builds an evidence-backed technology fingerprint from observed product, version, service, TLS tunnel, CPE, and extra-info fields.
+- Optional HTTP security review (`--http-probe`) inspects response headers and cookie attributes using one bounded HEAD request per recognized web service.
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
@@ -26,7 +27,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 3. Nmap metadata is normalized into observed identity fields and conservative technology hints with evidence provenance.
 4. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
 5. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
-6. A JSON report is written for further review.
+6. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
+7. A JSON report is written for further review.
 
 CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
 
@@ -78,6 +80,14 @@ Specify ports and an output file:
 python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json
 ```
 
+Enable the optional HTTP headers and cookie review (only for recognized web services):
+
+```bash
+python scanner.py --target 192.0.2.10 --http-probe
+```
+
+The HTTP review sends one `HEAD /` request per recognized web service, does not follow redirects, uses short timeouts, and does not disable TLS certificate verification. It records cookie names and security attributes only; cookie values are not saved. Missing security headers are hardening observations, not proof of an exploitable vulnerability.
+
 Disable the local Exploit-DB search:
 
 ```bash
@@ -118,6 +128,7 @@ Reports use a versioned JSON envelope:
 - `summary`: host, open-service, CVE-candidate, and Searchsploit-reference counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
+- `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
@@ -128,6 +139,7 @@ Reports may contain target addresses, port/service information, software version
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
 - The scanner has a conservative evaluator for common NVD configuration-tree logic, but it only knows the detected service inventory. Multi-component requirements may therefore remain `candidate_unverified` until the full host inventory is available.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches.
+- The HTTP assessment checks only a single HEAD response from `/`; it does not crawl pages, inspect JavaScript, test forms, or validate application behavior.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
