@@ -16,24 +16,35 @@
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import nmap
+
+from asset_context import assess_asset_context
+from remediation import build_remediation
+from report import write_html_report
+from risk import assess_cves, assess_service_risk
 
 from assessment import (
     assess_cve_applicability,
     build_report_entry,
     classify_exploit,
     cpe22_to_cpe23,
+    build_technology_fingerprint,
+    assess_network_exposure,
+    build_exploit_intelligence,
 )
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -46,6 +57,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
+REPORT_SCHEMA_VERSION = "1.8"
+SCANNER_VERSION = "0.9.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -447,21 +460,246 @@ def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
     return out
 
 
-def parse_args():
+def validate_target(value):
+    """Accept one IP address, CIDR network, or DNS hostname; reject option/shell-like input."""
+    target = (value or "").strip()
+    if not target or target != value or any(ch.isspace() or ord(ch) < 32 for ch in target):
+        raise ValueError("Target must be a single IP, CIDR network, or hostname without whitespace.")
+    if target.startswith("-") or "://" in target or any(ch in target for ch in ";|&`$<>\\\\"):
+        raise ValueError("Target contains unsupported characters.")
+    try:
+        ipaddress.ip_address(target)
+        return target
+    except ValueError:
+        pass
+    try:
+        ipaddress.ip_network(target, strict=False)
+        return target
+    except ValueError:
+        pass
+    hostname = target[:-1] if target.endswith(".") else target
+    if len(hostname) > 253 or not hostname:
+        raise ValueError("Hostname length is invalid.")
+    labels = hostname.split(".")
+    label_re = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+    if not all(label_re.fullmatch(label) for label in labels):
+        raise ValueError("Target is not a valid IP, CIDR network, or DNS hostname.")
+    return target
+
+
+def validate_ports(value):
+    """Validate a comma-separated list of TCP port numbers/ranges."""
+    ports = (value or "").strip()
+    if not ports or ports != value:
+        raise ValueError("Ports cannot be empty or contain surrounding whitespace.")
+    for item in ports.split(","):
+        if not re.fullmatch(r"\d+(?:-\d+)?", item):
+            raise ValueError(f"Invalid port expression: {item!r}")
+        parts = [int(part) for part in item.split("-")]
+        if any(port < 1 or port > 65535 for port in parts):
+            raise ValueError(f"Port numbers must be between 1 and 65535: {item!r}")
+        if len(parts) == 2 and parts[0] > parts[1]:
+            raise ValueError(f"Port range start exceeds end: {item!r}")
+    return ports
+
+
+def normalize_nmap_args(value):
+    """Parse and safely re-quote user-supplied Nmap arguments for python-nmap's shell command."""
+    try:
+        tokens = shlex.split(value or "")
+    except ValueError as exc:
+        raise ValueError(f"Invalid --nmap-args quoting: {exc}") from exc
+    if not tokens:
+        raise ValueError("--nmap-args cannot be empty.")
+    if any(any(ord(ch) < 32 for ch in token) for token in tokens):
+        raise ValueError("--nmap-args cannot contain control characters.")
+    return shlex.join(tokens)
+
+
+def scanned_hosts(scanner):
+    """Return Nmap's resolved host list (which may contain IPs instead of the input hostname)."""
+    hosts = list(scanner.all_hosts())
+    if not hosts:
+        raise RuntimeError("Nmap did not return any hosts. Check target reachability and scan options.")
+    return hosts
+
+
+def write_json_report(filename, results):
+    """Write reports atomically so an interrupted scan cannot leave a truncated JSON file."""
+    output_path = os.path.abspath(filename)
+    output_dir = os.path.dirname(output_path) or os.curdir
+    os.makedirs(output_dir, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=output_dir,
+            prefix=".reconforge-", suffix=".tmp", delete=False
+        ) as handle:
+            temp_path = handle.name
+            json.dump(results, handle, indent=4, ensure_ascii=False)
+            handle.write("\
+")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, output_path)
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise
+
+
+
+
+HTTP_PROBE_PORTS = {80, 443, 8000, 8080, 8081, 8443, 8888}
+
+
+def probe_http_metadata(host, port, port_data):
+    """Make one bounded HEAD request to the service root; never follow redirects."""
+    service = str((port_data or {}).get("name") or "").lower()
+    tunnel = str((port_data or {}).get("tunnel") or "").lower()
+    if port not in HTTP_PROBE_PORTS and not any(token in service for token in ("http", "https")):
+        return {"status": "skipped", "reason": "not_recognized_as_http"}
+    is_https = tunnel in ("ssl", "tls") or service in ("https", "https-alt") or port in (443, 8443)
+    scheme = "https" if is_https else "http"
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    url = f"{scheme}://{url_host}:{port}/"
+    try:
+        response = requests.head(
+            url, timeout=(3, 5), allow_redirects=False, verify=True,
+            headers={"User-Agent": f"ReconForge/{SCANNER_VERSION} (authorized security assessment)"},
+        )
+    except requests.exceptions.SSLError:
+        return {"status": "probe_error", "error": "tls_validation_failed",
+                "limitations": ["TLS certificate validation failed; no insecure retry was attempted."]}
+    except requests.exceptions.Timeout:
+        return {"status": "probe_error", "error": "request_timeout"}
+    except requests.exceptions.RequestException:
+        return {"status": "probe_error", "error": "http_request_failed"}
+
+    set_cookie_headers = []
+    raw_headers = getattr(getattr(response, "raw", None), "headers", None)
+    if raw_headers is not None and hasattr(raw_headers, "getlist"):
+        set_cookie_headers = raw_headers.getlist("Set-Cookie")
+    elif response.headers.get("Set-Cookie"):
+        set_cookie_headers = [response.headers.get("Set-Cookie")]
+    from assessment import analyze_http_security, analyze_web_content
+    analysis = analyze_http_security(response.headers, set_cookie_headers, is_https=is_https)
+    return {
+        "status": "response_received", "scheme": scheme, "status_code": response.status_code,
+        "redirect_location_present": bool(response.headers.get("Location")),
+        "security_analysis": analysis,
+    }
+
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="بورت سكانر محسّن: nmap + CVEs من NVD + بحث Exploit-DB محلي")
     parser.add_argument("--target", required=True, help="الـ IP أو الدومين المستهدف")
-    parser.add_argument("--ports", default="1-1000", help="رينج البورتات (مثال: 1-1000)")
+    parser.add_argument("--ports", default="1-1000", help="رينج البورتات (مثال: 1-1000 أو 22,80,443)")
     parser.add_argument("--nvd-api-key", default=None,
                         help="NVD API Key (أو متغير البيئة NVD_API_KEY) - بيرفع الحد لـ 50 طلب/30 ثانية")
     parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
     parser.add_argument("--results-per-page", type=int, default=10,
-                        help="عدد نتائج NVD لكل استعلام (الافتراضي: 10)")
+                        help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
+    parser.add_argument("--http-probe", action="store_true",
+                        help="حلل HTTP headers وخصائص cookies بطلب HEAD واحد فقط لكل خدمة ويب")
+    parser.add_argument("--web-intel", action="store_true",
+                        help="حلل HTML وCMS/JS hints وrobots.txt وsitemap.xml بطلبات محدودة لنفس الـhost")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
+    parser.add_argument("--no-nvd", action="store_true",
+                        help="تخطّى استعلامات NVD (مفيد للاختبار دون اتصال أو عند تعطل الخدمة)")
+    parser.add_argument("--html-output", default=None,
+                        help="اسم ملف تقرير HTML مستقل (اختياري)")
+    parser.add_argument("--asset-criticality", choices=("unknown", "low", "medium", "high", "critical"), default="unknown",
+                        help="أهمية الأصل حسب تقييمك؛ لا يتم استنتاجها تلقائياً")
+    parser.add_argument("--exposure", choices=("unknown", "internal", "internet"), default="unknown",
+                        help="مدى تعرض الأصل حسب معلومات مؤكدة منك؛ لا يُستنتج من المنافذ")
     parser.add_argument("--output", "-o", default=None,
                         help="اسم ملف النتائج JSON (اختياري)")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    try:
+        args.target = validate_target(args.target)
+        args.ports = validate_ports(args.ports)
+        args.nmap_args = normalize_nmap_args(args.nmap_args)
+        if not 1 <= args.results_per_page <= 2000:
+            raise ValueError("--results-per-page must be between 1 and 2000.")
+        if args.output is not None and not args.output.strip():
+            raise ValueError("--output cannot be empty.")
+        if args.html_output is not None and not args.html_output.strip():
+            raise ValueError("--html-output cannot be empty.")
+    except ValueError as exc:
+        parser.error(str(exc))
+    return args
+
+
+WEB_BODY_LIMIT = 262144
+WEB_TEXT_LIMIT = 65536
+
+
+def _bounded_same_origin_get(url, limit):
+    """Fetch one fixed same-origin path, without redirects, retaining at most limit bytes."""
+    try:
+        response = requests.get(
+            url, timeout=(3, 5), allow_redirects=False, verify=True, stream=True,
+            headers={"User-Agent": f"ReconForge/{SCANNER_VERSION} (authorized security assessment)"},
+        )
+    except requests.exceptions.SSLError:
+        return None, "tls_validation_failed"
+    except requests.exceptions.Timeout:
+        return None, "request_timeout"
+    except requests.exceptions.RequestException:
+        return None, "http_request_failed"
+    try:
+        if response.status_code < 200 or response.status_code >= 300:
+            return None, f"http_status_{response.status_code}"
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            remaining = limit - total
+            if remaining <= 0:
+                break
+            chunks.append(chunk[:remaining])
+            total += min(len(chunk), remaining)
+            if total >= limit:
+                break
+        raw = b"".join(chunks)
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return raw.decode(encoding, errors="replace"), None
+    finally:
+        response.close()
+
+
+def probe_web_intelligence(host, port, port_data):
+    """Fetch only /, /robots.txt and /sitemap.xml on the scanned host; no crawling."""
+    service = str((port_data or {}).get("name") or "").lower()
+    tunnel = str((port_data or {}).get("tunnel") or "").lower()
+    if port not in HTTP_PROBE_PORTS and not any(token in service for token in ("http", "https")):
+        return {"status": "skipped", "reason": "not_recognized_as_http"}
+    is_https = tunnel in ("ssl", "tls") or service in ("https", "https-alt") or port in (443, 8443)
+    scheme = "https" if is_https else "http"
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    base = f"{scheme}://{url_host}:{port}"
+    html, root_error = _bounded_same_origin_get(base + "/", WEB_BODY_LIMIT)
+    if html is None:
+        return {"status": "probe_error", "error": root_error,
+                "limitations": ["The root document could not be retrieved; no alternate path or redirect was followed."]}
+
+    robots, robots_error = _bounded_same_origin_get(base + "/robots.txt", WEB_TEXT_LIMIT)
+    sitemap, sitemap_error = _bounded_same_origin_get(base + "/sitemap.xml", WEB_TEXT_LIMIT)
+    from assessment import analyze_web_content
+    analysis = analyze_web_content(html, robots, sitemap)
+    return {
+        "status": "response_received",
+        "scheme": scheme,
+        "root_document_bytes_limit": WEB_BODY_LIMIT,
+        "robots_status": "fetched" if robots is not None else robots_error,
+        "sitemap_status": "fetched" if sitemap is not None else sitemap_error,
+        "web_analysis": analysis,
+    }
+
 
 
 def main():
@@ -475,6 +713,8 @@ def main():
     session = requests.Session()
 
     target = args.target
+    started_at = datetime.now(timezone.utc)
+    started_monotonic = time.monotonic()
     print(f"بدء فحص: {target} على البورتات: {args.ports} (nmap args: {args.nmap_args})")
 
     scanner = nmap.PortScanner()
@@ -485,12 +725,14 @@ def main():
         print("تأكد إن التارجت متصل وإنك شغال بصلاحيات sudo")
         sys.exit(1)
 
-    if target not in scanner.all_hosts():
-        print("التارجت مش بيرد أو مش موجود - تأكد من الـ IP والاتصال")
+    try:
+        hosts = scanned_hosts(scanner)
+    except RuntimeError as e:
+        print(str(e))
         sys.exit(1)
 
     results = []
-    for host in scanner.all_hosts():
+    for host in hosts:
         try:
             ports = scanner[host].all_tcp()
         except (AttributeError, KeyError):
@@ -507,7 +749,9 @@ def main():
 
             cves = []
             cpes_tried = []
-            if version:
+            if args.no_nvd:
+                print("  تم تخطي NVD بناءً على --no-nvd")
+            elif version:
                 print(f"  بدور على CVEs لـ {product or service} {version}...")
                 cves, cpes_tried = check_cve_nvd(
                     session, port_data, api_key, limiter, args.results_per_page)
@@ -524,15 +768,33 @@ def main():
             exploits = []
             if not args.no_exploitdb:
                 print("  بدور على Exploits محلياً في Exploit-DB (searchsploit)...")
-                exploits = searchsploit_lookup(product or service, version)
-                if exploits:
+                # Generic service labels are not reliable product fingerprints.
+                exploits = searchsploit_lookup(product, version) if product else []
+                if not product:
+                    print("  مفيش product fingerprint موثوق - تم تخطي Searchsploit لتجنب نتائج غير مرتبطة")
+                elif exploits:
                     print(f"  لقيت {len(exploits)} exploit محتمل (أول 5):")
                     for e in exploits[:5]:
                         print(f"    EDB-{e['id']} - {e['title']}")
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
-            results.append(build_report_entry(
+            exploit_intelligence = build_exploit_intelligence(exploits, cves)
+            if exploit_intelligence:
+                print(f"  Exploit intelligence: {len(exploit_intelligence)} مرجع مع إرشادات تحقق آمنة")
+
+            http_assessment = {"status": "not_requested"}
+            if args.http_probe:
+                http_assessment = probe_http_metadata(host, port, port_data)
+                print(f"  HTTP assessment: {http_assessment.get('status')}")
+            web_intelligence = {"status": "not_requested"}
+            if args.web_intel:
+                web_intelligence = probe_web_intelligence(host, port, port_data)
+                print(f"  Web intelligence: {web_intelligence.get('status')}")
+
+            # Keep technical risk, operator-supplied asset context, and remediation separate.
+            cves = assess_cves(cves)
+            entry = build_report_entry(
                 host=host,
                 port=port,
                 state=state,
@@ -542,13 +804,78 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
-            ))
+                fingerprint=build_technology_fingerprint(port_data),
+                http_assessment=http_assessment,
+                web_intelligence=web_intelligence,
+                network_exposure=assess_network_exposure(port, service, product),
+                exploit_intelligence=exploit_intelligence,
+            )
+            technical_risk = assess_service_risk(cves, exploits)
+            asset_context = assess_asset_context(
+                technical_risk, args.asset_criticality, args.exposure
+            )
+            entry["risk_assessment"] = {
+                **technical_risk,
+                "asset_context": asset_context,
+            }
+            entry["remediation_guidance"] = build_remediation(
+                entry["service"], cves, entry["risk_assessment"]
+            )
+            results.append(entry)
+            if technical_risk["score"] is None:
+                print("  Risk priority: Unscored (no applicable CVSS evidence)")
+            else:
+                print(f"  Risk priority: {technical_risk['level']} ({technical_risk['score']:.1f}/100)")
+            contextual_score = asset_context["contextual_priority_score"]
+            if contextual_score is None:
+                print("  Contextual priority: Unscored")
+            else:
+                print(f"  Contextual priority: {asset_context['contextual_priority']} ({contextual_score:.1f}/100)")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = args.output or f"scan_{target}_{timestamp}.json"
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=4, ensure_ascii=False)
+    completed_at = datetime.now(timezone.utc)
+    scan_metadata = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "scanner": {"name": "ReconForge", "version": SCANNER_VERSION},
+        "requested_target": target,
+        "resolved_hosts": hosts,
+        "ports": args.ports,
+        "nmap_arguments": args.nmap_args,
+        "started_at_utc": started_at.isoformat(timespec="seconds"),
+        "completed_at_utc": completed_at.isoformat(timespec="seconds"),
+        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+        "open_services": len(results),
+    }
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
+    safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target).strip("._") or "target"
+    filename = args.output or f"scan_{safe_target}_{timestamp}.json"
+    report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "metadata": scan_metadata,
+        "findings": results,
+        "summary": {
+            "hosts_scanned": len(hosts),
+            "open_services": len(results),
+            "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
+            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
+            "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
+            "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
+            "risk_scored_services": sum(item.get("risk_assessment", {}).get("score") is not None for item in results),
+            "remediation_guidance_services": sum(bool(item.get("remediation_guidance")) for item in results),
+        },
+    }
+    try:
+        write_json_report(filename, report)
+    except OSError as e:
+        print(f"تعذر حفظ التقرير: {e}")
+        sys.exit(1)
     print(f"تم حفظ النتائج في {filename}")
+    if args.html_output:
+        try:
+            html_path = write_html_report(results, args.html_output, target=target)
+        except OSError as exc:
+            print(f"تعذر حفظ تقرير HTML: {exc}")
+            sys.exit(1)
+        print(f"تم حفظ تقرير HTML في {html_path}")
 
 
 if __name__ == "__main__":
