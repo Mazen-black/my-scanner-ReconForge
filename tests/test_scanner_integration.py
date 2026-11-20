@@ -80,6 +80,24 @@ class CheckCVEIntegrationTests(unittest.TestCase):
         self.assertTrue(tried)
         self.assertEqual(mock_fetch.call_count, 2)
 
+    @patch("scanner.nvd_fetch", return_value={"vulnerabilities": []})
+    def test_single_string_nmap_cpe_is_used_as_one_cpe_query(self, mock_fetch):
+        scanner.check_cve_nvd(
+            session=None,
+            port_data={
+                "name": "ftp", "product": "vsftpd", "version": "2.3.4",
+                "cpe": "cpe:/a:vsftpd:vsftpd:2.3.4",
+            },
+            api_key=None,
+            limiter=None,
+            results_per_page=10,
+        )
+        first_query = mock_fetch.call_args_list[0].args[1]["virtualMatchString"]
+        self.assertEqual(
+            first_query,
+            "cpe:2.3:a:vsftpd:vsftpd:2.3.4:*:*:*:*:*:*:*",
+        )
+
 
 class HTTPProbeTests(unittest.TestCase):
     @patch("scanner.requests.head")

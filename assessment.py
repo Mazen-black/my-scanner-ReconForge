@@ -277,7 +277,14 @@ def build_technology_fingerprint(port_data):
     tunnel = str(data.get("tunnel") or "").strip()
     method = str(data.get("method") or "").strip()
     confidence = data.get("conf")
-    cpes = [str(value) for value in (data.get("cpe") or []) if value]
+    raw_cpes = data.get("cpe") or []
+    # python-nmap may expose a single CPE as a string; iterating it directly
+    # would incorrectly turn the identifier into a list of characters.
+    if isinstance(raw_cpes, str):
+        raw_cpes = [raw_cpes]
+    elif not isinstance(raw_cpes, (list, tuple, set)):
+        raw_cpes = []
+    cpes = [str(value).strip() for value in raw_cpes if value and str(value).strip()]
 
     observations = []
     for field, value in (

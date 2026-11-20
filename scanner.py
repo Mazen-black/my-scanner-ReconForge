@@ -255,7 +255,13 @@ def _cvss_of(cve):
 def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
     """يبني CPE candidates من بيانات البورت ويستعلم NVD ويرجّع (cves, cpes_tested)"""
     bases = []  # (ptype, vendor:product, source)
-    for uri in port_data.get("cpe") or []:
+    raw_cpes = port_data.get("cpe") or []
+    # python-nmap may return one CPE as a string rather than a list.
+    if isinstance(raw_cpes, str):
+        raw_cpes = [raw_cpes]
+    elif not isinstance(raw_cpes, (list, tuple, set)):
+        raw_cpes = []
+    for uri in raw_cpes:
         cpe23 = _cpe22_to_cpe23(uri)
         if cpe23:
             parts = cpe23.split(":")

@@ -183,6 +183,16 @@ class TechnologyFingerprintTests(unittest.TestCase):
         self.assertIn("openssl", categories)
         self.assertIn("encrypted_transport", categories)
 
+    def test_normalizes_single_string_cpe_without_splitting_characters(self):
+        cpe = "cpe:/a:apache:http_server:2.2.8"
+        result = build_technology_fingerprint({"name": "http", "cpe": cpe})
+        self.assertEqual(result["observed"]["cpes"], [cpe])
+
+    def test_preserves_multiple_cpes_as_separate_identifiers(self):
+        cpes = ["cpe:/a:apache:http_server:2.2.8", "cpe:/a:openssl:openssl:0.9.8"]
+        result = build_technology_fingerprint({"name": "http", "cpe": cpes})
+        self.assertEqual(result["observed"]["cpes"], cpes)
+
     def test_does_not_invent_technology_without_evidence(self):
         result = build_technology_fingerprint({"name": "unknown"})
         self.assertEqual(result["technology_stack"], [])
