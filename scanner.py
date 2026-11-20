@@ -50,8 +50,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.3"
-SCANNER_VERSION = "0.4.0"
+REPORT_SCHEMA_VERSION = "1.4"
+SCANNER_VERSION = "0.5.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -574,7 +574,7 @@ def probe_http_metadata(host, port, port_data):
         set_cookie_headers = raw_headers.getlist("Set-Cookie")
     elif response.headers.get("Set-Cookie"):
         set_cookie_headers = [response.headers.get("Set-Cookie")]
-    from assessment import analyze_http_security
+    from assessment import analyze_http_security, analyze_web_content
     analysis = analyze_http_security(response.headers, set_cookie_headers, is_https=is_https)
     return {
         "status": "response_received", "scheme": scheme, "status_code": response.status_code,
@@ -595,6 +595,8 @@ def parse_args(argv=None):
                         help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
     parser.add_argument("--http-probe", action="store_true",
                         help="حلل HTTP headers وخصائص cookies بطلب HEAD واحد فقط لكل خدمة ويب")
+    parser.add_argument("--web-intel", action="store_true",
+                        help="حلل HTML وCMS/JS hints وrobots.txt وsitemap.xml بطلبات محدودة لنفس الـhost")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
     parser.add_argument("--output", "-o", default=None,
@@ -611,6 +613,75 @@ def parse_args(argv=None):
     except ValueError as exc:
         parser.error(str(exc))
     return args
+
+
+WEB_BODY_LIMIT = 262144
+WEB_TEXT_LIMIT = 65536
+
+
+def _bounded_same_origin_get(url, limit):
+    """Fetch one fixed same-origin path, without redirects, retaining at most limit bytes."""
+    try:
+        response = requests.get(
+            url, timeout=(3, 5), allow_redirects=False, verify=True, stream=True,
+            headers={"User-Agent": "ReconForge/0.5.0 (authorized security assessment)"},
+        )
+    except requests.exceptions.SSLError:
+        return None, "tls_validation_failed"
+    except requests.exceptions.Timeout:
+        return None, "request_timeout"
+    except requests.exceptions.RequestException:
+        return None, "http_request_failed"
+    try:
+        if response.status_code < 200 or response.status_code >= 300:
+            return None, f"http_status_{response.status_code}"
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            remaining = limit - total
+            if remaining <= 0:
+                break
+            chunks.append(chunk[:remaining])
+            total += min(len(chunk), remaining)
+            if total >= limit:
+                break
+        raw = b"".join(chunks)
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return raw.decode(encoding, errors="replace"), None
+    finally:
+        response.close()
+
+
+def probe_web_intelligence(host, port, port_data):
+    """Fetch only /, /robots.txt and /sitemap.xml on the scanned host; no crawling."""
+    service = str((port_data or {}).get("name") or "").lower()
+    tunnel = str((port_data or {}).get("tunnel") or "").lower()
+    if port not in HTTP_PROBE_PORTS and not any(token in service for token in ("http", "https")):
+        return {"status": "skipped", "reason": "not_recognized_as_http"}
+    is_https = tunnel in ("ssl", "tls") or service in ("https", "https-alt") or port in (443, 8443)
+    scheme = "https" if is_https else "http"
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    base = f"{scheme}://{url_host}:{port}"
+    html, root_error = _bounded_same_origin_get(base + "/", WEB_BODY_LIMIT)
+    if html is None:
+        return {"status": "probe_error", "error": root_error,
+                "limitations": ["The root document could not be retrieved; no alternate path or redirect was followed."]}
+
+    robots, robots_error = _bounded_same_origin_get(base + "/robots.txt", WEB_TEXT_LIMIT)
+    sitemap, sitemap_error = _bounded_same_origin_get(base + "/sitemap.xml", WEB_TEXT_LIMIT)
+    from assessment import analyze_web_content
+    analysis = analyze_web_content(html, robots, sitemap)
+    return {
+        "status": "response_received",
+        "scheme": scheme,
+        "root_document_bytes_limit": WEB_BODY_LIMIT,
+        "robots_status": "fetched" if robots is not None else robots_error,
+        "sitemap_status": "fetched" if sitemap is not None else sitemap_error,
+        "web_analysis": analysis,
+    }
+
 
 
 def main():
@@ -689,6 +760,10 @@ def main():
             if args.http_probe:
                 http_assessment = probe_http_metadata(host, port, port_data)
                 print(f"  HTTP assessment: {http_assessment.get('status')}")
+            web_intelligence = {"status": "not_requested"}
+            if args.web_intel:
+                web_intelligence = probe_web_intelligence(host, port, port_data)
+                print(f"  Web intelligence: {web_intelligence.get('status')}")
 
             results.append(build_report_entry(
                 host=host,
@@ -702,6 +777,7 @@ def main():
                 exploits=exploits,
                 fingerprint=build_technology_fingerprint(port_data),
                 http_assessment=http_assessment,
+                web_intelligence=web_intelligence,
             ))
 
     completed_at = datetime.now(timezone.utc)
