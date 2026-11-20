@@ -156,3 +156,76 @@ class WebIntelligenceProbeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
+    @patch("scanner.write_json_report")
+    @patch("scanner.searchsploit_lookup")
+    @patch("scanner.check_cve_nvd")
+    @patch("scanner.nmap.PortScanner")
+    @patch("scanner.requests.Session")
+    @patch("scanner.parse_args")
+    def test_main_includes_exploit_intelligence_in_final_report(
+        self, mock_args, mock_session, mock_port_scanner, mock_cve_lookup,
+        mock_searchsploit, mock_write_report
+    ):
+        from argparse import Namespace
+
+        mock_args.return_value = Namespace(
+            target="127.0.0.1", ports="22", nmap_args="-sV",
+            results_per_page=10, nvd_api_key=None, no_exploitdb=False,
+            http_probe=False, web_intel=False, output="report.json",
+        )
+        mock_session.return_value = object()
+        mock_cve_lookup.return_value = (
+            [{"id": "CVE-2024-12345", "cvss": 8.8, "severity": "HIGH"}], []
+        )
+        mock_searchsploit.return_value = [{
+            "id": "12345",
+            "title": "OpenSSH CVE-2024-12345",
+            "type": "remote",
+            "platform": "linux",
+            "assessment": {"relevance": "product_match_version_unconfirmed"},
+        }]
+
+        class FakeHost:
+            def all_tcp(self):
+                return [22]
+
+        class FakeScanner:
+            def scan(self, target, ports, arguments):
+                self.asserted_scan = (target, ports, arguments)
+
+            def all_hosts(self):
+                return ["127.0.0.1"]
+
+            def __getitem__(self, host):
+                return {
+                    "tcp": {
+                        22: {
+                            "state": "open", "name": "ssh",
+                            "product": "OpenSSH", "version": "9.0",
+                            "cpe": [], "extrainfo": "", "tunnel": "",
+                            "method": "probed", "conf": "10",
+                        }
+                    }
+                }
+
+        mock_port_scanner.return_value = FakeScanner()
+        captured = {}
+        mock_write_report.side_effect = lambda filename, report: captured.update(report)
+
+        scanner.main()
+
+        finding = captured["findings"][0]
+        self.assertEqual(
+            finding["exploit_intelligence"][0]["reference"]["url"],
+            "https://www.exploit-db.com/exploits/12345",
+        )
+        self.assertEqual(
+            finding["exploit_intelligence"][0]["cve_correlation"]["matched_scanner_cve_ids"],
+            ["CVE-2024-12345"],
+        )
+        self.assertEqual(finding["exploit_intelligence"][0]["execution_status"], "not_executed")
+        self.assertEqual(captured["summary"]["exploit_intelligence_references"], 1)
