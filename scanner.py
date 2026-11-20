@@ -39,6 +39,7 @@ from risk import assess_cves, assess_service_risk
 
 from assessment import (
     assess_cve_applicability,
+    apply_contextual_cve_constraints,
     build_report_entry,
     classify_exploit,
     cpe22_to_cpe23,
@@ -57,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.8"
-SCANNER_VERSION = "0.9.0"
+REPORT_SCHEMA_VERSION = "1.9"
+SCANNER_VERSION = "0.10.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -382,7 +383,9 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
             ))
         matched = next((a for a in assessments if a.get("status") == "version_match"), None)
         if matched:
-            item["applicability"] = matched
+            item["applicability"] = apply_contextual_cve_constraints(
+                item.get("id"), matched, item.get("summary", "")
+            )
         elif str(item.get("source", "")).startswith("NVD keyword search"):
             item["applicability"] = {
                 "status": "candidate_unverified",
@@ -391,7 +394,9 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
                 "limitations": ["This result came from keyword search, not a validated vulnerable CPE/version match.", "Check the vendor advisory and complete NVD version ranges manually."],
             }
         elif assessments:
-            item["applicability"] = assessments[0]
+            item["applicability"] = apply_contextual_cve_constraints(
+                item.get("id"), assessments[0], item.get("summary", "")
+            )
         else:
             item["applicability"] = {
                 "status": "candidate_unverified",

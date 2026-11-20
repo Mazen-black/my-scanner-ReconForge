@@ -235,6 +235,43 @@ def assess_cve_applicability(cve, vendor, product, detected_version, part="a"):
         ],
     }
 
+# NVD CPE ranges can be broader than the actual condition described by a CNA.
+# Keep known build/provenance conditions explicit instead of treating a CPE hit as proof.
+CVE_CONTEXT_CONSTRAINTS = {
+    "CVE-2011-2523": {
+        "kind": "build_provenance",
+        "condition": (
+            "The backdoored vsftpd 2.3.4 source archives were downloaded between "
+            "2011-06-30 and 2011-07-03; version 2.3.4 alone does not establish that provenance."
+        ),
+        "required_evidence": [
+            "Package or source-archive download/build provenance for the affected date window.",
+            "Binary/package hash or trusted vendor package metadata.",
+            "Confirmation that the installed build is the backdoored upstream artifact, not a clean rebuild or vendor package."
+        ],
+        "source": "CVE/NVD description and CNA/vendor advisory context",
+    },
+}
+
+
+def apply_contextual_cve_constraints(cve_id, applicability, summary=""):
+    """Downgrade broad CPE matches when a CVE also requires build/provenance evidence."""
+    result = dict(applicability or {})
+    constraint = CVE_CONTEXT_CONSTRAINTS.get(str(cve_id or "").upper())
+    if not constraint:
+        return result
+    if result.get("status") == "version_match":
+        result["cpe_version_status"] = "version_match"
+        result["status"] = "candidate_unverified"
+        result["confidence"] = "low"
+        result["contextual_constraint"] = dict(constraint)
+        result["limitations"] = list(result.get("limitations") or []) + [
+            "The NVD CPE version matched, but this CVE has an additional build/provenance condition that cannot be verified from a service banner.",
+            "Do not report this as confirmed affected until the contextual condition is independently established.",
+        ]
+    return result
+
+
 def classify_exploit(row, product, version):
     """Classify Searchsploit rows conservatively using title/product/version evidence."""
     title = str(row.get("Title") or "")
@@ -242,14 +279,19 @@ def classify_exploit(row, product, version):
     product_words = [w for w in re.sub(r"[^a-z0-9]+", " ", (product or "").lower()).split() if len(w) > 1]
     version = (version or "").strip()
     matched_words = [w for w in product_words if re.search(r"\b" + re.escape(w) + r"\b", haystack)]
-    # Search the original title for version punctuation (e.g. dots); haystack normalization removes it.
     version_match = bool(version and re.search(
         r"(?<![0-9a-z])" + re.escape(version.lower()) + r"(?![0-9a-z])", title.lower()
     ))
+    version_candidates = list(dict.fromkeys(re.findall(
+        r"(?<![0-9a-z])v?\d+(?:\.\d+){1,3}(?:[-+][a-z0-9._-]+)?(?![0-9a-z])",
+        title.lower(),
+    )))
     if not product_words or not matched_words:
         relevance, confidence = "weak_or_unrelated", "low"
     elif len(matched_words) == len(product_words) and version_match:
-        relevance, confidence = "product_and_version_match", "medium"
+        relevance, confidence = "product_and_version_match", "low"
+    elif len(matched_words) == len(product_words) and version_candidates and version:
+        relevance, confidence = "product_match_different_version_in_title", "low"
     elif len(matched_words) == len(product_words):
         relevance, confidence = "product_match_version_unconfirmed", "low"
     else:
@@ -261,9 +303,14 @@ def classify_exploit(row, product, version):
             "product_tokens_matched": matched_words,
             "product_tokens_expected": product_words,
             "version_text_match": version_match,
+            "detected_version": version or None,
+            "version_candidates_in_title": version_candidates,
             "title": title,
         },
-        "limitations": ["Searchsploit title matching is heuristic; validate affected versions, platform, prerequisites, and exploit behavior before treating as applicable."],
+        "limitations": [
+            "Searchsploit title matching is heuristic and does not validate affected build, platform, configuration, prerequisites, or exploit reliability.",
+            "An exact product/version string in a title is a research lead, not proof that the target is vulnerable.",
+        ],
     }
 
 
@@ -601,13 +648,9 @@ def assess_network_exposure(port, service="", product=""):
 
 
 def build_exploit_intelligence(exploits, cves):
-    """Enrich local exploit references with explicit CVE links and safe validation guidance.
-
-    This function never executes exploit code and never treats a title match as proof
-    that a target is vulnerable.
-    """
-    cve_ids = {
-        str(item.get("id") or "").upper()
+    """Enrich local exploit references with CVE applicability context and safe triage guidance."""
+    cve_by_id = {
+        str(item.get("id") or "").upper(): item
         for item in (cves or [])
         if re.fullmatch(r"CVE-\d{4}-\d{4,}", str(item.get("id") or ""), re.I)
     }
@@ -618,8 +661,35 @@ def build_exploit_intelligence(exploits, cves):
         edb_id = str(exploit.get("id") or "").strip()
         title = str(exploit.get("title") or "")
         explicit_ids = sorted(set(re.findall(r"(?i)\bCVE-\d{4}-\d{4,}\b", title)))
-        linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_ids]
+        linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_by_id]
+        linked_assessments = []
+        for cve_id in linked_ids:
+            cve = cve_by_id[cve_id]
+            applicability = cve.get("applicability") or {}
+            linked_assessments.append({
+                "cve_id": cve_id,
+                "applicability_status": applicability.get("status", "candidate_unverified"),
+                "confidence": applicability.get("confidence", "low"),
+                "cvss": cve.get("cvss"),
+                "contextual_constraint": applicability.get("contextual_constraint"),
+            })
+        if not explicit_ids:
+            correlation_status = "no_explicit_cve_link"
+            triage_status = "manual_cve_correlation_required"
+        elif not linked_ids:
+            correlation_status = "explicit_cve_not_in_scanner_results"
+            triage_status = "cve_not_returned_by_scanner"
+        elif any(item["applicability_status"] == "version_match" for item in linked_assessments):
+            correlation_status = "explicit_title_and_scanner_match"
+            triage_status = "cve_version_match_still_requires_manual_validation"
+        elif any(item["applicability_status"] == "candidate_unverified" for item in linked_assessments):
+            correlation_status = "explicit_cve_match_applicability_unverified"
+            triage_status = "cve_candidate_unverified"
+        else:
+            correlation_status = "explicit_cve_match_not_applicable"
+            triage_status = "cve_not_matched_by_nvd_cpe"
         valid_edb_id = edb_id if re.fullmatch(r"\d{1,8}", edb_id) else None
+        source_assessment = (exploit.get("assessment") or {}).copy()
         intelligence.append({
             "reference": {
                 "source": "Exploit-DB",
@@ -632,24 +702,31 @@ def build_exploit_intelligence(exploits, cves):
             "cve_correlation": {
                 "explicit_cve_ids_in_title": explicit_ids,
                 "matched_scanner_cve_ids": linked_ids,
-                "status": "explicit_title_and_scanner_match" if linked_ids else (
-                    "explicit_cve_not_in_scanner_results" if explicit_ids else "no_explicit_cve_link"
-                ),
+                "matched_cve_applicability": linked_assessments,
+                "status": correlation_status,
             },
-            "source_assessment": (exploit.get("assessment") or {}).copy(),
+            "source_assessment": source_assessment,
+            "triage": {
+                "status": triage_status,
+                "confidence": "low",
+                "meaning": "Research relevance only; this is not a vulnerability confirmation.",
+            },
             "validation_guidance": [
-                "Confirm the vendor advisory's affected product, exact version, build, and platform.",
-                "Check exploit prerequisites, required privileges, configuration, and mitigations.",
-                "Validate only in an isolated lab or under an explicitly authorized test plan.",
+                "Confirm the vendor advisory's affected product, exact version, build provenance, and platform.",
+                "Check exploit prerequisites, required privileges, configuration, mitigations, and whether the exploit applies to this implementation.",
+                "If a CVE has additional build/provenance conditions, verify those independently; a CPE version match is insufficient.",
+                "Validate only through non-invasive checks or in an isolated lab under an explicitly authorized test plan.",
             ],
             "execution_status": "not_executed",
             "limitations": [
                 "An Exploit-DB reference or title match does not prove target vulnerability or exploit reliability.",
                 "CVE correlation is based only on explicit CVE identifiers in the exploit title.",
+                "NVD CPE applicability is kept separate from exploit applicability and may omit build-specific conditions.",
                 "No exploit payload was downloaded, launched, or executed by ReconForge.",
             ],
         })
     return intelligence
+
 
 def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None, exploit_intelligence=None):
     """Stable, readable JSON shape for one discovered service."""

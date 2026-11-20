@@ -52,14 +52,20 @@ def _cve_rows(cves):
         score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
         priority_score = priority.get("priority_score")
         priority_text = f"{priority_score:.1f}" if isinstance(priority_score, (int, float)) else "N/A"
+        contextual = applicability.get("contextual_constraint") or {}
+        summary = str(cve.get("summary") or "")
+        if contextual.get("condition"):
+            summary += " Additional verification required: " + str(contextual["condition"])
         rows.append(
             '<tr>'
             f'<td><strong>{_e(cve.get("id"))}</strong></td>'
             f'<td><span class="severity {css}">{_e(severity)}</span></td>'
             f'<td class="numeric">{_e(score_text)}</td>'
             f'<td><span class="severity {priority_css}">{_e(priority_level)}</span> <span class="muted">({_e(priority_text)})</span></td>'
-            f'<td>{_e(status)}</td>'
-            f'<td>{_e(cve.get("summary"))}</td>'
+            f'<td>{_e(status)}'
+            + (f'<div class="muted">CPE: {_e(applicability.get("cpe_version_status"))}; constraint: {_e(contextual.get("kind"))}</div>' if contextual else '')
+            + '</td>'
+            f'<td>{_e(summary)}</td>'
             '</tr>'
         )
     return "".join(rows) or '<tr><td colspan="6" class="empty">No CVE results recorded.</td></tr>'
@@ -94,10 +100,15 @@ def _risk_rows(results):
     return "".join(rows) or '<tr><td colspan="8" class="empty">No service risk data recorded.</td></tr>'
 
 
-def _exploit_rows(exploits):
+def _exploit_rows(exploits, intelligence_by_id=None):
     rows = []
+    intelligence_by_id = intelligence_by_id or {}
     for exploit in exploits or []:
         assessment = exploit.get("assessment") or {}
+        enriched = intelligence_by_id.get(str(exploit.get("id") or ""), {})
+        triage = enriched.get("triage") or {}
+        correlation = enriched.get("cve_correlation") or {}
+        cve_state = correlation.get("status", "not_correlated")
         rows.append(
             '<tr>'
             f'<td>{_e(exploit.get("id"))}</td>'
@@ -105,9 +116,13 @@ def _exploit_rows(exploits):
             f'<td>{_e(exploit.get("platform"))}</td>'
             f'<td>{_e(assessment.get("relevance", "unassessed"))}</td>'
             f'<td>{_e(assessment.get("confidence", "low"))}</td>'
+            f'<td>{_e(triage.get("status", "manual_review_required"))}</td>'
+            f'<td>{_e(cve_state)}'
+            + (f'<div class="muted">{_e(", ".join(correlation.get("matched_scanner_cve_ids") or []))}</div>' if correlation.get("matched_scanner_cve_ids") else '')
+            + '</td>'
             '</tr>'
         )
-    return "".join(rows) or '<tr><td colspan="5" class="empty">No matching Exploit-DB entries recorded.</td></tr>'
+    return "".join(rows) or '<tr><td colspan="7" class="empty">No matching Exploit-DB entries recorded.</td></tr>'
 
 
 
@@ -145,6 +160,11 @@ def render_html_report(results, target="Unknown", generated_at=None):
     open_ports = len(results)
     cves = [cve for item in results for cve in (item.get("cve_assessment") or [])]
     exploits = [exploit for item in results for exploit in (item.get("searchsploit_assessment") or [])]
+    exploit_intelligence_by_id = {
+        str((entry.get("reference") or {}).get("id") or ""): entry
+        for item in results for entry in (item.get("exploit_intelligence") or [])
+        if (entry.get("reference") or {}).get("id")
+    }
     confirmed_matches = sum(
         1 for cve in cves
         if (cve.get("applicability") or {}).get("status") == "version_match"
@@ -232,8 +252,8 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <section><h2>CVE Assessment</h2><p class="muted">CVSS base severity and ReconForge review priority are separate. Priority discounts unverified applicability; it does not prove exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>CVE</th><th>CVSS Severity</th><th>CVSS</th><th>Review Priority</th><th>Applicability</th><th>Summary</th></tr></thead>
 <tbody>{_cve_rows(cves)}</tbody></table></div></section>
-<section><h2>Exploit-DB References</h2><div class="table-wrap"><table><thead><tr><th>EDB ID</th><th>Title</th><th>Platform</th><th>Relevance</th><th>Confidence</th></tr></thead>
-<tbody>{_exploit_rows(exploits)}</tbody></table></div></section>
+<section><h2>Exploit-DB References</h2><p class="muted">Exploit references are research leads. Triage and CVE correlation do not establish exploitability.</p><div class="table-wrap"><table><thead><tr><th>EDB ID</th><th>Title</th><th>Platform</th><th>Relevance</th><th>Confidence</th><th>Triage</th><th>CVE correlation</th></tr></thead>
+<tbody>{_exploit_rows(exploits, exploit_intelligence_by_id)}</tbody></table></div></section>
 <section><h2>Remediation Guidance</h2><p class="muted">Advisory guidance only. ReconForge does not execute changes, does not invent fixed versions, and requires vendor/change-control validation.</p>
 {_remediation_sections(results)}</section>
 <section><h2>Assessment Limitations</h2><ul>{limitation_html}</ul>

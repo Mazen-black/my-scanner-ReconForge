@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence
+from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence, apply_contextual_cve_constraints
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -37,6 +37,19 @@ class CVEApplicabilityTests(unittest.TestCase):
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
         self.assertEqual(result["evidence"][0]["reason"], "exact_version")
+
+    def test_contextual_build_provenance_downgrades_broad_cpe_match(self):
+        base = {"status": "version_match", "confidence": "medium", "evidence": [{"reason": "exact_version"}]}
+        result = apply_contextual_cve_constraints("CVE-2011-2523", base)
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertEqual(result["cpe_version_status"], "version_match")
+        self.assertEqual(result["contextual_constraint"]["kind"], "build_provenance")
+        self.assertTrue(any("build/provenance" in item for item in result["limitations"]))
+
+    def test_contextual_constraint_does_not_change_unrelated_cve(self):
+        base = {"status": "version_match", "confidence": "medium", "evidence": []}
+        result = apply_contextual_cve_constraints("CVE-2024-12345", base)
+        self.assertEqual(result, base)
 
     def test_exact_version_mismatch_is_not_match(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*"))
@@ -161,6 +174,11 @@ class SearchsploitTests(unittest.TestCase):
     def test_unrelated_title_is_weak(self):
         result = classify_exploit({"Title": "WordPress plugin SQL Injection"}, "Apache httpd", "2.4.57")
         self.assertEqual(result["relevance"], "weak_or_unrelated")
+
+    def test_different_version_in_title_is_not_reported_as_version_match(self):
+        result = classify_exploit({"Title": "Apache httpd 2.2.8 - Example"}, "Apache httpd", "2.4.57")
+        self.assertEqual(result["relevance"], "product_match_different_version_in_title")
+        self.assertFalse(result["evidence"]["version_text_match"])
 
     def test_report_has_structured_service_and_limits(self):
         report = build_report_entry("127.0.0.1", 80, "open", "http", "Apache httpd", "2.4.57", [], [], [])
@@ -294,6 +312,17 @@ class ExploitIntelligenceTests(unittest.TestCase):
         )[0]
         self.assertEqual(result["cve_correlation"]["status"], "no_explicit_cve_link")
         self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], [])
+
+    def test_cve_correlation_preserves_unverified_applicability(self):
+        result = build_exploit_intelligence(
+            [{"id": "123", "title": "Example CVE-2011-2523 exploit"}],
+            [{"id": "CVE-2011-2523", "cvss": 9.8,
+              "applicability": {"status": "candidate_unverified", "confidence": "low",
+                                "contextual_constraint": {"kind": "build_provenance"}}}],
+        )[0]
+        self.assertEqual(result["cve_correlation"]["status"], "explicit_cve_match_applicability_unverified")
+        self.assertEqual(result["triage"]["status"], "cve_candidate_unverified")
+        self.assertEqual(result["cve_correlation"]["matched_cve_applicability"][0]["contextual_constraint"]["kind"], "build_provenance")
 
     def test_rejects_non_numeric_exploit_db_identifier_for_url(self):
         result = build_exploit_intelligence(

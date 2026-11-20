@@ -65,6 +65,30 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Restrict access to approved networks.", html)
         self.assertIn("Re-scan from the approved test network.", html)
 
+    def test_report_shows_contextual_cve_constraints_and_exploit_triage(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["applicability"] = {
+            "status": "candidate_unverified", "confidence": "low",
+            "cpe_version_status": "version_match",
+            "contextual_constraint": {
+                "kind": "build_provenance",
+                "condition": "Verify package build provenance before confirming impact.",
+            },
+        }
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "12345"},
+            "triage": {"status": "cve_candidate_unverified"},
+            "cve_correlation": {
+                "status": "explicit_cve_match_applicability_unverified",
+                "matched_scanner_cve_ids": ["CVE-2099-0001"],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("build_provenance", html)
+        self.assertIn("Verify package build provenance", html)
+        self.assertIn("cve_candidate_unverified", html)
+        self.assertIn("explicit_cve_match_applicability_unverified", html)
+
     def test_untrusted_values_are_escaped(self):
         html = render_html_report(self.sample())
         self.assertNotIn("<script>alert(1)</script>", html)
