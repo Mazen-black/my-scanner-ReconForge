@@ -1,5 +1,5 @@
 import unittest
-from assessment import analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
+from assessment import analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -180,6 +180,39 @@ class HTTPSecurityAssessmentTests(unittest.TestCase):
         report = build_report_entry("127.0.0.1", 80, "open", "http", "", "", [], [], [],
                                     http_assessment={"status": "not_requested"})
         self.assertEqual(report["http_assessment"]["status"], "not_requested")
+
+
+class WebContentAnalysisTests(unittest.TestCase):
+    def test_detects_cms_and_javascript_libraries_from_html_evidence(self):
+        html = """
+        <meta name="generator" content="WordPress 6.4.2">
+        <script src="/wp-includes/js/jquery/jquery-3.7.1.min.js"></script>
+        <script src="/assets/vue.min.js"></script>
+        """
+        result = analyze_web_content(html)
+        found = {(item["name"], item.get("version")) for item in result["technologies"]}
+        self.assertIn(("WordPress", "6.4.2"), found)
+        self.assertIn(("jQuery", "3.7.1"), found)
+        self.assertIn(("Vue.js", None), found)
+
+    def test_detects_drupal_asset_without_claiming_version(self):
+        result = analyze_web_content('<script src="/sites/default/files/js/app.js"></script>')
+        self.assertIn("Drupal", {item["name"] for item in result["technologies"]})
+
+    def test_parses_robots_and_sitemap_metadata_without_storing_paths(self):
+        result = analyze_web_content(
+            "<html></html>",
+            "User-agent: *\nDisallow: /admin\nSitemap: https://example.test/sitemap.xml\n",
+            "<urlset><url><loc>https://example.test/a</loc></url><url><loc>https://example.test/b</loc></url></urlset>",
+        )
+        self.assertEqual(result["robots_txt"]["disallow_directives"], 1)
+        self.assertEqual(result["robots_txt"]["sitemap_directives"], 1)
+        self.assertEqual(result["sitemap_xml"]["url_count"], 2)
+        self.assertNotIn("/admin", repr(result))
+
+    def test_empty_content_does_not_invent_technology(self):
+        result = analyze_web_content("")
+        self.assertEqual(result["technologies"], [])
 
 
 if __name__ == "__main__":
