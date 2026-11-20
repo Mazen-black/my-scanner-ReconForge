@@ -472,7 +472,8 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
             if match:
                 add({"wordpress": "WordPress", "drupal": "Drupal", "joomla": "Joomla"}[match.group(1).lower()], "cms", "meta_generator", "medium", match.group(2))
 
-    all_assets = "\n".join(parser.assets)
+    all_assets = "
+".join(parser.assets)
     asset_patterns = (
         (r"(?i)(?:^|[/])wp-content[/]", "WordPress", "cms", None),
         (r"(?i)(?:^|[/])wp-includes[/]", "WordPress", "cms", None),
@@ -662,7 +663,8 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
         "web_intelligence": web_intelligence,
         "network_exposure": network_exposure or [],
         "cve_assessment": cves,
-        "searchsploit_assessment": exploits,\n        "exploit_intelligence": exploit_intelligence or [],
+        "searchsploit_assessment": exploits,
+        "exploit_intelligence": exploit_intelligence or [],
         "assessment_limits": [
             "Nmap product/version banners may be incomplete or spoofed.",
             "A matching CVE or exploit reference is not confirmation of a vulnerability.",
