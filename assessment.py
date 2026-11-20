@@ -600,7 +600,7 @@ def build_exploit_intelligence(exploits, cves):
     cve_ids = {
         str(item.get("id") or "").upper()
         for item in (cves or [])
-        if re.fullmatch(r"CVE-\\d{4}-\\d{4,}", str(item.get("id") or ""), re.I)
+        if re.fullmatch(r"CVE-\d{4}-\d{4,}", str(item.get("id") or ""), re.I)
     }
     intelligence = []
     for exploit in exploits or []:
@@ -608,9 +608,9 @@ def build_exploit_intelligence(exploits, cves):
             continue
         edb_id = str(exploit.get("id") or "").strip()
         title = str(exploit.get("title") or "")
-        explicit_ids = sorted(set(re.findall(r"(?i)\\bCVE-\\d{4}-\\d{4,}\\b", title)))
+        explicit_ids = sorted(set(re.findall(r"(?i)\bCVE-\d{4}-\d{4,}\b", title)))
         linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_ids]
-        valid_edb_id = edb_id if re.fullmatch(r"\\d{1,8}", edb_id) else None
+        valid_edb_id = edb_id if re.fullmatch(r"\d{1,8}", edb_id) else None
         intelligence.append({
             "reference": {
                 "source": "Exploit-DB",
