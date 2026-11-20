@@ -1,5 +1,5 @@
 import unittest
-from assessment import analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
+from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -217,3 +217,29 @@ class WebContentAnalysisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NetworkExposureAssessmentTests(unittest.TestCase):
+    def test_flags_exposed_database_with_remediation(self):
+        findings = assess_network_exposure(3306, "mysql", "MySQL")
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["severity"], "high")
+        self.assertEqual(findings[0]["status"], "exposed_service_observed")
+        self.assertIn("private interfaces", findings[0]["recommendation"])
+        self.assertIn("not proof", " ".join(findings[0]["limitations"]))
+
+    def test_flags_unauthenticated_docker_api_as_critical_observation(self):
+        finding = assess_network_exposure(2375, "docker", "Docker")[0]
+        self.assertEqual(finding["severity"], "critical")
+        self.assertIn("Disable", finding["recommendation"])
+
+    def test_does_not_flag_ordinary_or_unknown_ports(self):
+        self.assertEqual(assess_network_exposure(443, "https", "nginx"), [])
+        self.assertEqual(assess_network_exposure(65000, "unknown", ""), [])
+        self.assertEqual(assess_network_exposure("invalid"), [])
+
+    def test_report_entry_contains_network_exposure_field(self):
+        finding = assess_network_exposure(3389, "ms-wbt-server", "")
+        report = build_report_entry("192.0.2.1", 3389, "open", "ms-wbt-server", "", "", [], [], [],
+                                    network_exposure=finding)
+        self.assertEqual(report["network_exposure"][0]["id"], "remote_access_exposure")
