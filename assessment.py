@@ -472,8 +472,7 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
             if match:
                 add({"wordpress": "WordPress", "drupal": "Drupal", "joomla": "Joomla"}[match.group(1).lower()], "cms", "meta_generator", "medium", match.group(2))
 
-    all_assets = "
-".join(parser.assets)
+    all_assets = "\n".join(parser.assets)
     asset_patterns = (
         (r"(?i)(?:^|[/])wp-content[/]", "WordPress", "cms", None),
         (r"(?i)(?:^|[/])wp-includes[/]", "WordPress", "cms", None),
