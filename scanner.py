@@ -37,6 +37,7 @@ from assessment import (
     build_report_entry,
     classify_exploit,
     cpe22_to_cpe23,
+    build_technology_fingerprint,
 )
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -597,19 +598,6 @@ def main():
         sys.exit(1)
 
     results = []
-    completed_at = datetime.now(timezone.utc)
-    scan_metadata = {
-        "schema_version": REPORT_SCHEMA_VERSION,
-        "scanner": {"name": "ReconForge", "version": SCANNER_VERSION},
-        "requested_target": target,
-        "resolved_hosts": hosts,
-        "ports": args.ports,
-        "nmap_arguments": args.nmap_args,
-        "started_at_utc": started_at.isoformat(timespec="seconds"),
-        "completed_at_utc": completed_at.isoformat(timespec="seconds"),
-        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
-        "open_services": len(results),
-    }
     for host in hosts:
         try:
             ports = scanner[host].all_tcp()
@@ -662,9 +650,22 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
-                scan_metadata=scan_metadata,
+                fingerprint=build_technology_fingerprint(port_data),
             ))
 
+    completed_at = datetime.now(timezone.utc)
+    scan_metadata = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "scanner": {"name": "ReconForge", "version": SCANNER_VERSION},
+        "requested_target": target,
+        "resolved_hosts": hosts,
+        "ports": args.ports,
+        "nmap_arguments": args.nmap_args,
+        "started_at_utc": started_at.isoformat(timespec="seconds"),
+        "completed_at_utc": completed_at.isoformat(timespec="seconds"),
+        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+        "open_services": len(results),
+    }
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
     safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target).strip("._") or "target"
     filename = args.output or f"scan_{safe_target}_{timestamp}.json"
