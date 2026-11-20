@@ -62,6 +62,49 @@ class CVEApplicabilityTests(unittest.TestCase):
         self.assertNotEqual(result["status"], "version_match")
 
 
+    def test_and_requires_every_environment_component(self):
+        cve = {"configurations": [{"nodes": [{"operator": "AND", "cpeMatch": [
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"},
+            {"vulnerable": False, "criteria": "cpe:2.3:o:linux:linux_kernel:6.1:*:*:*:*:*:*:*"},
+        ]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertEqual(result["evidence"], [])
+
+    def test_or_can_match_one_vulnerable_alternative(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"},
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*"},
+        ]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "version_match")
+        self.assertEqual(len(result["evidence"]), 1)
+
+    def test_nested_and_child_requirement_is_not_ignored(self):
+        cve = {"configurations": [{"nodes": [{"operator": "AND", "cpeMatch": [
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"}
+        ], "children": [{"operator": "OR", "cpeMatch": [
+            {"vulnerable": False, "criteria": "cpe:2.3:o:linux:linux_kernel:6.1:*:*:*:*:*:*:*"}
+        ]}]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+
+    def test_negated_matching_condition_is_not_positive_evidence(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "negate": True, "cpeMatch": [
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"}
+        ]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertNotEqual(result["status"], "version_match")
+
+    def test_unknown_environment_component_does_not_pass_and(self):
+        cve = {"configurations": [{"nodes": [{"operator": "AND", "cpeMatch": [
+            {"vulnerable": True, "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"},
+            {"vulnerable": False, "criteria": "cpe:2.3:a:openssl:openssl:3.0.0:*:*:*:*:*:*:*"}
+        ]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+
+
 class SearchsploitTests(unittest.TestCase):
     def test_product_and_version_match(self):
         result = classify_exploit({"Title": "Apache httpd 2.4.57 - Example"}, "Apache httpd", "2.4.57")
