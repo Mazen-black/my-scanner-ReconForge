@@ -11,6 +11,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 ## Features
 
 - Uses Nmap for port scanning and service/version detection.
+- Builds an evidence-backed technology fingerprint from observed product, version, service, TLS tunnel, CPE, and extra-info fields.
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
@@ -22,9 +23,10 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 1. Nmap identifies open ports and service/version details on the specified target.
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
-3. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
-4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
-5. A JSON report is written for further review.
+3. Nmap metadata is normalized into observed identity fields and conservative technology hints with evidence provenance.
+4. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
+5. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
+6. A JSON report is written for further review.
 
 CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
 
