@@ -531,7 +531,8 @@ def write_json_report(filename, results):
         ) as handle:
             temp_path = handle.name
             json.dump(results, handle, indent=4, ensure_ascii=False)
-            handle.write("\\n")
+            handle.write("\
+")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_path, output_path)
@@ -806,7 +807,8 @@ def main():
             "hosts_scanned": len(hosts),
             "open_services": len(results),
             "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
-            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),\n            "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
+            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
+            "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
             "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
         },
     }
