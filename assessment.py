@@ -749,6 +749,7 @@ def _deduplicate_exploit_references(exploits):
                 "title": title[:300] or None,
                 "platform": str(exploit.get("platform") or "")[:80] or None,
                 "type": str(exploit.get("type") or "")[:80] or None,
+                "explicit_cve_ids": _explicit_exploit_cve_ids(exploit),
             }
             if observation not in observations:
                 observations.append(observation)
@@ -763,6 +764,9 @@ def _deduplicate_exploit_references(exploits):
 def _explicit_exploit_cve_ids(exploit):
     """Collect only syntactically valid CVE IDs explicitly present in source fields."""
     values = [str(exploit.get("title") or "")]
+    for observation in exploit.get("duplicate_observations") or []:
+        if isinstance(observation, dict):
+            values.extend(str(value) for value in observation.get("explicit_cve_ids") or [])
     for field in ("cve", "cve_id", "cve_ids", "references"):
         value = exploit.get(field)
         if isinstance(value, str):
@@ -789,6 +793,10 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
     for exploit in _deduplicate_exploit_references(exploits):
         edb_id = str(exploit.get("id") or "").strip()
         title = str(exploit.get("title") or "")
+        explicit_title_ids = sorted({
+            match.upper()
+            for match in re.findall(r"(?i)\bCVE-\d{4}-\d{4,}\b", title)
+        })
         explicit_ids = _explicit_exploit_cve_ids(exploit)
         linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_by_id]
         linked_assessments = []
@@ -873,7 +881,8 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "metadata_source": "local_exploitdb_file_header" if local_metadata else None,
             },
             "cve_correlation": {
-                "explicit_cve_ids_in_title": explicit_ids,
+                "explicit_cve_ids_in_title": explicit_title_ids,
+                "explicit_cve_ids_in_source_fields": explicit_ids,
                 "matched_scanner_cve_ids": linked_ids,
                 "matched_cve_applicability": linked_assessments,
                 "link_basis": "explicit_cve_identifier_in_source_fields" if explicit_ids else "no_explicit_identifier",

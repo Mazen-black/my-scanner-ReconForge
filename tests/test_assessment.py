@@ -450,6 +450,16 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(result[0]["reference"]["id"], "12345")
         self.assertEqual(len(result[0]["cve_correlation"]["duplicate_observations"]), 1)
 
+    def test_duplicate_edb_hit_preserves_explicit_cve_id_from_alternate_observation(self):
+        result = build_exploit_intelligence([
+            {"id": "12346", "title": "Generic Example issue"},
+            {"id": "12346", "title": "Generic Example issue CVE-2024-12345"},
+        ], [{"id": "CVE-2024-12345"}])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
+        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_title"], [])
+        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_source_fields"], ["CVE-2024-12345"])
+
     def test_multiple_exploit_references_share_only_explicit_cve_links(self):
         result = build_exploit_intelligence([
             {"id": "100", "title": "Example CVE-2024-12345 exploit"},
