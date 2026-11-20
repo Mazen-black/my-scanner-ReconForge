@@ -729,20 +729,67 @@ def assess_exploit_platform(exploit_platform, target_platform=None):
     }
 
 
-def build_exploit_intelligence(exploits, cves, target_platform=None):
-    """Enrich local exploit references with CVE applicability context and safe triage guidance."""
-    cve_by_id = {
-        str(item.get("id") or "").upper(): item
-        for item in (cves or [])
-        if re.fullmatch(r"CVE-\d{4}-\d{4,}", str(item.get("id") or ""), re.I)
-    }
-    intelligence = []
+def _deduplicate_exploit_references(exploits):
+    """Deduplicate repeated Exploit-DB search hits without discarding their observed variants."""
+    unique, positions = [], {}
     for exploit in exploits or []:
         if not isinstance(exploit, dict):
             continue
         edb_id = str(exploit.get("id") or "").strip()
+        title = str(exploit.get("title") or "").strip()
+        if re.fullmatch(r"\d{1,8}", edb_id):
+            key = ("edb", edb_id)
+        else:
+            normalized_title = re.sub(r"\s+", " ", title).casefold()
+            key = ("title", normalized_title, str(exploit.get("platform") or "").casefold())
+        if key in positions:
+            primary = unique[positions[key]]
+            observations = primary.setdefault("duplicate_observations", [])
+            observation = {
+                "title": title[:300] or None,
+                "platform": str(exploit.get("platform") or "")[:80] or None,
+                "type": str(exploit.get("type") or "")[:80] or None,
+            }
+            if observation not in observations:
+                observations.append(observation)
+            continue
+        positions[key] = len(unique)
+        primary = dict(exploit)
+        primary["duplicate_observations"] = []
+        unique.append(primary)
+    return unique
+
+
+def _explicit_exploit_cve_ids(exploit):
+    """Collect only syntactically valid CVE IDs explicitly present in source fields."""
+    values = [str(exploit.get("title") or "")]
+    for field in ("cve", "cve_id", "cve_ids", "references"):
+        value = exploit.get(field)
+        if isinstance(value, str):
+            values.append(value)
+        elif isinstance(value, (list, tuple, set)):
+            values.extend(str(item) for item in value)
+    return sorted({
+        match.upper()
+        for value in values
+        for match in re.findall(r"(?i)\bCVE-\d{4}-\d{4,}\b", value)
+    })
+
+
+def build_exploit_intelligence(exploits, cves, target_platform=None):
+    """Enrich local exploit references with explicit CVE links and safe triage guidance."""
+    cve_by_id = {}
+    for item in cves or []:
+        if not isinstance(item, dict):
+            continue
+        cve_id = str(item.get("id") or "").upper()
+        if re.fullmatch(r"CVE-\d{4}-\d{4,}", cve_id, re.I):
+            cve_by_id.setdefault(cve_id, item)
+    intelligence = []
+    for exploit in _deduplicate_exploit_references(exploits):
+        edb_id = str(exploit.get("id") or "").strip()
         title = str(exploit.get("title") or "")
-        explicit_ids = sorted(set(re.findall(r"(?i)\bCVE-\d{4}-\d{4,}\b", title)))
+        explicit_ids = _explicit_exploit_cve_ids(exploit)
         linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_by_id]
         linked_assessments = []
         for cve_id in linked_ids:
@@ -829,6 +876,9 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "explicit_cve_ids_in_title": explicit_ids,
                 "matched_scanner_cve_ids": linked_ids,
                 "matched_cve_applicability": linked_assessments,
+                "link_basis": "explicit_cve_identifier_in_source_fields" if explicit_ids else "no_explicit_identifier",
+                "link_confidence": "high_for_identifier_link_only" if linked_ids else "none",
+                "duplicate_observations": exploit.get("duplicate_observations") or [],
                 "status": correlation_status,
             },
             "source_assessment": source_assessment,
@@ -867,6 +917,23 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "No exploit payload was downloaded, launched, or executed by ReconForge.",
             ],
         })
+    # Cross-reference only explicit CVE identifier links; never infer links from title similarity.
+    exploit_ids_by_cve = {}
+    for item in intelligence:
+        for cve_id in item["cve_correlation"]["matched_scanner_cve_ids"]:
+            reference_id = item["reference"].get("id")
+            if reference_id:
+                exploit_ids_by_cve.setdefault(cve_id, []).append(reference_id)
+    for item in intelligence:
+        linked_ids = item["cve_correlation"]["matched_scanner_cve_ids"]
+        related = sorted({
+            reference_id
+            for cve_id in linked_ids
+            for reference_id in exploit_ids_by_cve.get(cve_id, [])
+            if reference_id != item["reference"].get("id")
+        }, key=lambda value: (len(value), value))
+        item["cve_correlation"]["related_exploit_db_ids"] = related
+        item["cve_correlation"]["shared_cve_reference_count"] = len(related) + (1 if linked_ids else 0)
     return intelligence
 
 

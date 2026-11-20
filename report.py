@@ -155,6 +155,9 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             f'<td>{_e(requirements_state)} / {_e(architecture_state)}</td>'
             f'<td>{_e(cve_state)}'
             + (f'<div class="muted">{_e(", ".join(correlation.get("matched_scanner_cve_ids") or []))}</div>' if correlation.get("matched_scanner_cve_ids") else '')
+            + (f'<div class="muted">Explicit-ID link confidence: {_e(correlation.get("link_confidence"))}</div>' if correlation.get("link_confidence") else '')
+            + (f'<div class="muted">Related EDB references: {_e(", ".join(correlation.get("related_exploit_db_ids") or []))}</div>' if correlation.get("related_exploit_db_ids") else '')
+            + (f'<div class="muted">Duplicate search observations: {len(correlation.get("duplicate_observations") or [])}</div>' if correlation.get("duplicate_observations") else '')
             + '</td>'
             '</tr>'
         )

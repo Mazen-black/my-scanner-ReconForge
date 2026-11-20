@@ -441,6 +441,45 @@ class ExploitIntelligenceTests(unittest.TestCase):
         )[0]
         self.assertIsNone(result["reference"]["url"])
 
+    def test_duplicate_exploit_db_ids_are_collapsed_and_observations_preserved(self):
+        result = build_exploit_intelligence([
+            {"id": "12345", "title": "Example CVE-2024-12345", "platform": "Linux"},
+            {"id": "12345", "title": "Example CVE-2024-12345 (alternate search hit)", "platform": "Linux"},
+        ], [{"id": "CVE-2024-12345"}])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["reference"]["id"], "12345")
+        self.assertEqual(len(result[0]["cve_correlation"]["duplicate_observations"]), 1)
+
+    def test_multiple_exploit_references_share_only_explicit_cve_links(self):
+        result = build_exploit_intelligence([
+            {"id": "100", "title": "Example CVE-2024-12345 exploit"},
+            {"id": "200", "title": "Another PoC CVE-2024-12345"},
+            {"id": "300", "title": "Similar Example product remote issue"},
+        ], [{"id": "CVE-2024-12345"}])
+        by_id = {item["reference"]["id"]: item for item in result}
+        self.assertEqual(by_id["100"]["cve_correlation"]["related_exploit_db_ids"], ["200"])
+        self.assertEqual(by_id["200"]["cve_correlation"]["related_exploit_db_ids"], ["100"])
+        self.assertEqual(by_id["300"]["cve_correlation"]["related_exploit_db_ids"], [])
+        self.assertEqual(by_id["100"]["cve_correlation"]["link_confidence"], "high_for_identifier_link_only")
+
+    def test_structured_explicit_cve_id_is_supported_without_title_guessing(self):
+        result = build_exploit_intelligence([
+            {"id": "101", "title": "Generic product issue", "cve_ids": ["CVE-2024-12345", "not-a-cve"]}
+        ], [{"id": "CVE-2024-12345"}])[0]
+        self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
+        self.assertEqual(result["cve_correlation"]["link_basis"], "explicit_cve_identifier_in_source_fields")
+
+    def test_duplicate_cve_records_are_not_counted_twice(self):
+        result = build_exploit_intelligence([
+            {"id": "102", "title": "Example CVE-2024-12345"}
+        ], [
+            {"id": "CVE-2024-12345", "cvss": 7.5},
+            {"id": "CVE-2024-12345", "cvss": 9.8},
+        ])[0]
+        linked = result["cve_correlation"]["matched_cve_applicability"]
+        self.assertEqual(len(linked), 1)
+        self.assertEqual(linked[0]["cvss"], 7.5)
+
     def test_report_contains_exploit_intelligence(self):
         report = build_report_entry(
             "127.0.0.1", 22, "open", "ssh", "OpenSSH", "9.0", [], [], [],

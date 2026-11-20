@@ -226,6 +226,29 @@ class HTMLReportTests(unittest.TestCase):
             self.assertIn("Network Scan Report", written.read_text(encoding="utf-8"))
 
 
+    def test_report_renders_explicit_cve_correlation_and_related_references(self):
+        findings = self.sample()
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "100", "title": "Example CVE-2099-0001", "platform": "Linux",
+            "assessment": {"relevance": "product_match_version_unconfirmed"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "100"},
+            "triage": {"status": "manual_review_required", "applicability_confidence": "low",
+                       "exploitability_confidence": "unknown"},
+            "cve_correlation": {
+                "status": "explicit_title_and_scanner_match",
+                "matched_scanner_cve_ids": ["CVE-2099-0001"],
+                "link_confidence": "high_for_identifier_link_only",
+                "related_exploit_db_ids": ["200", "300"],
+                "duplicate_observations": [{"title": "alternate title"}],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Explicit-ID link confidence: high_for_identifier_link_only", html)
+        self.assertIn("Related EDB references: 200, 300", html)
+        self.assertIn("Duplicate search observations: 1", html)
+
     def test_report_renders_confidence_reasons_and_evidence_gaps(self):
         findings = self.sample()
         findings[0]["cve_assessment"][0]["applicability"].update({
