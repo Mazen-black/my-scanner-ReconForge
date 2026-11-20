@@ -193,11 +193,10 @@ def classify_exploit(row, product, version):
     }
 
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, scan_metadata=None):
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
-        "scan_metadata": scan_metadata or {},
         "port": port,
         "state": state,
         "service": {
