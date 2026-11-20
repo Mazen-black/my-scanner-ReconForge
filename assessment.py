@@ -292,14 +292,14 @@ def build_technology_fingerprint(port_data):
         ("nmap.service", service, "medium"),
     )
     rules = (
-        ("web_server", r"\\b(apache|httpd|nginx|iis|caddy|lighttpd)\\b"),
-        ("application_server", r"\\b(tomcat|jetty|wildfly|jboss|weblogic)\\b"),
-        ("php_runtime", r"\\bphp(?:/[0-9][\\w.]*)?\\b"),
-        ("openssl", r"\\bopenssl(?:/[0-9][\\w.]*)?\\b"),
-        ("openssh", r"\\bopenssh(?:_[0-9][\\w.]*)?\\b"),
-        ("database", r"\\b(mysql|mariadb|postgresql|mongodb|redis|microsoft sql server)\\b"),
-        ("reverse_proxy", r"\\b(haproxy|traefik|envoy)\\b"),
-        ("container_platform", r"\\b(docker|containerd|podman)\\b"),
+        ("web_server", r"\b(apache|httpd|nginx|iis|caddy|lighttpd)\b"),
+        ("application_server", r"\b(tomcat|jetty|wildfly|jboss|weblogic)\b"),
+        ("php_runtime", r"\bphp(?:/[0-9][\w.]*)?\b"),
+        ("openssl", r"\bopenssl(?:/[0-9][\w.]*)?\b"),
+        ("openssh", r"\bopenssh(?:_[0-9][\w.]*)?\b"),
+        ("database", r"\b(mysql|mariadb|postgresql|mongodb|redis|microsoft sql server)\b"),
+        ("reverse_proxy", r"\b(haproxy|traefik|envoy)\b"),
+        ("container_platform", r"\b(docker|containerd|podman)\b"),
     )
     seen = set()
     for source, value, confidence_level in haystacks:
@@ -357,8 +357,8 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
         "identification_evidence": {
             "source": "Nmap service detection",
             "cpe_queries_tested": cpes_tested,
+            "technology_fingerprint": fingerprint or {},
         },
-        "technology_fingerprint": fingerprint or {},
         "cve_assessment": cves,
         "searchsploit_assessment": exploits,
         "assessment_limits": [
