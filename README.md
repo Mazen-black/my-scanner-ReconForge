@@ -12,7 +12,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 - Uses Nmap for port scanning and service/version detection.
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
-- Compares detected product/version information with available CPE and version-range data where possible.
+- Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
@@ -22,7 +22,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 1. Nmap identifies open ports and service/version details on the specified target.
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
-3. Available CPE criteria and version bounds are compared with the detected version.
+3. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
 4. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
 5. A JSON report is written for further review.
 
@@ -123,7 +123,7 @@ Reports may contain target addresses, port/service information, software version
 - Service identification depends on Nmap's detection and the information exposed by the target.
 - NVD search results are candidates, not confirmed vulnerabilities.
 - Version comparison is not guaranteed to model every vendor-specific version scheme.
-- NVD configuration trees can contain complex logical relationships; the current assessment should be treated as an indicator, not a complete implementation of the NVD applicability specification.
+- The scanner has a conservative evaluator for common NVD configuration-tree logic, but it only knows the detected service inventory. Multi-component requirements may therefore remain `candidate_unverified` until the full host inventory is available.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
