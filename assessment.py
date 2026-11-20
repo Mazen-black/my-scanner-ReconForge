@@ -590,7 +590,59 @@ def assess_network_exposure(port, service="", product=""):
         ],
     }]
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None):
+
+def build_exploit_intelligence(exploits, cves):
+    """Enrich local exploit references with explicit CVE links and safe validation guidance.
+
+    This function never executes exploit code and never treats a title match as proof
+    that a target is vulnerable.
+    """
+    cve_ids = {
+        str(item.get("id") or "").upper()
+        for item in (cves or [])
+        if re.fullmatch(r"CVE-\\d{4}-\\d{4,}", str(item.get("id") or ""), re.I)
+    }
+    intelligence = []
+    for exploit in exploits or []:
+        if not isinstance(exploit, dict):
+            continue
+        edb_id = str(exploit.get("id") or "").strip()
+        title = str(exploit.get("title") or "")
+        explicit_ids = sorted(set(re.findall(r"(?i)\\bCVE-\\d{4}-\\d{4,}\\b", title)))
+        linked_ids = [value.upper() for value in explicit_ids if value.upper() in cve_ids]
+        valid_edb_id = edb_id if re.fullmatch(r"\\d{1,8}", edb_id) else None
+        intelligence.append({
+            "reference": {
+                "source": "Exploit-DB",
+                "id": valid_edb_id,
+                "url": f"https://www.exploit-db.com/exploits/{valid_edb_id}" if valid_edb_id else None,
+                "title": title[:300],
+                "type": str(exploit.get("type") or "")[:80] or None,
+                "platform": str(exploit.get("platform") or "")[:80] or None,
+            },
+            "cve_correlation": {
+                "explicit_cve_ids_in_title": explicit_ids,
+                "matched_scanner_cve_ids": linked_ids,
+                "status": "explicit_title_and_scanner_match" if linked_ids else (
+                    "explicit_cve_not_in_scanner_results" if explicit_ids else "no_explicit_cve_link"
+                ),
+            },
+            "source_assessment": (exploit.get("assessment") or {}).copy(),
+            "validation_guidance": [
+                "Confirm the vendor advisory's affected product, exact version, build, and platform.",
+                "Check exploit prerequisites, required privileges, configuration, and mitigations.",
+                "Validate only in an isolated lab or under an explicitly authorized test plan.",
+            ],
+            "execution_status": "not_executed",
+            "limitations": [
+                "An Exploit-DB reference or title match does not prove target vulnerability or exploit reliability.",
+                "CVE correlation is based only on explicit CVE identifiers in the exploit title.",
+                "No exploit payload was downloaded, launched, or executed by ReconForge.",
+            ],
+        })
+    return intelligence
+
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None, network_exposure=None, exploit_intelligence=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -610,7 +662,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
         "web_intelligence": web_intelligence,
         "network_exposure": network_exposure or [],
         "cve_assessment": cves,
-        "searchsploit_assessment": exploits,
+        "searchsploit_assessment": exploits,\n        "exploit_intelligence": exploit_intelligence or [],
         "assessment_limits": [
             "Nmap product/version banners may be incomplete or spoofed.",
             "A matching CVE or exploit reference is not confirmation of a vulnerability.",
