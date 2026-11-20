@@ -65,101 +65,173 @@ def _compare_versions(left, right):
     return (a > b) - (a < b)
 
 
-def _walk_cpe_matches(value):
-    """Yield cpeMatch records from NVD configurations without assuming node shape."""
-    if isinstance(value, dict):
-        for match in value.get("cpeMatch") or []:
-            if isinstance(match, dict):
-                yield match
-        for key in ("nodes", "children"):
-            for child in value.get(key) or []:
-                yield from _walk_cpe_matches(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk_cpe_matches(child)
+def _version_match(match, detected_version):
+    """Return (state, evidence, reason): state is True, False, or None (unknown)."""
+    criteria = match.get("criteria") or match.get("cpe23Uri") or ""
+    fields = criteria.split(":")
+    criteria_version = fields[5] if len(fields) > 5 else "*"
+    bounds = [
+        (match.get("versionStartIncluding"), ">="),
+        (match.get("versionStartExcluding"), ">"),
+        (match.get("versionEndIncluding"), "<="),
+        (match.get("versionEndExcluding"), "<"),
+    ]
+    if criteria_version not in ("*", "-", ""):
+        cmp = _compare_versions(detected_version, criteria_version)
+        if cmp is None:
+            if detected_version != criteria_version:
+                return None, None, f"{criteria}: version format is not safely comparable"
+        elif cmp != 0:
+            return False, None, None
+        reason = "exact_version"
+    else:
+        if not any(value for value, _ in bounds):
+            return None, None, f"{criteria}: wildcard version without explicit version bounds"
+        for bound, op in bounds:
+            if not bound:
+                continue
+            cmp = _compare_versions(detected_version, bound)
+            if cmp is None:
+                return None, None, f"{criteria}: version bounds cannot be compared safely"
+            if ((op == ">=" and cmp < 0) or (op == ">" and cmp <= 0)
+                    or (op == "<=" and cmp > 0) or (op == "<" and cmp >= 0)):
+                return False, None, None
+        reason = "version_range_match"
+    evidence = {
+        "criteria": criteria,
+        "reason": reason,
+        "vulnerable": match.get("vulnerable") is True,
+        "versionStartIncluding": match.get("versionStartIncluding"),
+        "versionStartExcluding": match.get("versionStartExcluding"),
+        "versionEndIncluding": match.get("versionEndIncluding"),
+        "versionEndExcluding": match.get("versionEndExcluding"),
+    }
+    return True, evidence, None
+
+
+def _combine_states(states, operator):
+    """Kleene three-valued logic: unknown is never promoted to a positive match."""
+    if not states:
+        return None
+    op = str(operator or "OR").upper()
+    if op == "AND":
+        if False in states:
+            return False
+        return True if all(state is True for state in states) else None
+    if op == "OR":
+        if True in states:
+            return True
+        return False if all(state is False for state in states) else None
+    return None
+
+
+def _evaluate_config_node(node, vendor, product, detected_version, part):
+    """Evaluate an NVD node without discarding AND/OR/negate semantics."""
+    if not isinstance(node, dict):
+        return None, [], ["Malformed NVD configuration node"]
+    states, evidence, uncertain = [], [], []
+    expected = (part, vendor.lower(), product.lower())
+    for match in node.get("cpeMatch") or []:
+        if not isinstance(match, dict):
+            states.append(None)
+            uncertain.append("Malformed cpeMatch entry")
+            continue
+        criteria = match.get("criteria") or match.get("cpe23Uri") or ""
+        fields = criteria.split(":")
+        if len(fields) < 6 or fields[0:2] != ["cpe", "2.3"]:
+            states.append(None)
+            uncertain.append("CPE criteria is missing or malformed")
+            continue
+        identity = (fields[2].lower(), fields[3].lower(), fields[4].lower())
+        if identity != expected:
+            # We only know the detected service, not the rest of the host inventory.
+            states.append(None)
+            uncertain.append(f"Required environment CPE not assessed: {criteria}")
+            continue
+        state, item_evidence, reason = _version_match(match, detected_version)
+        states.append(state)
+        if item_evidence:
+            evidence.append(item_evidence)
+        if reason:
+            uncertain.append(reason)
+    for child in node.get("children") or node.get("nodes") or []:
+        child_state, child_evidence, child_uncertain = _evaluate_config_node(
+            child, vendor, product, detected_version, part
+        )
+        states.append(child_state)
+        evidence.extend(child_evidence)
+        uncertain.extend(child_uncertain)
+    state = _combine_states(states, node.get("operator", "OR"))
+    if node.get("negate") is True:
+        state = None if state is None else not state
+        if state is True:
+            # A negated condition is not affirmative evidence that this product is vulnerable.
+            state = None
+            uncertain.append("Negated NVD condition cannot establish vulnerable-product applicability")
+    return state, evidence, uncertain
 
 
 def assess_cve_applicability(cve, vendor, product, detected_version, part="a"):
-    """Assess only vulnerable CPE entries for this product; ambiguous version logic stays candidate."""
-    expected = f"cpe:2.3:{part}:{vendor}:{product}:"
-    evidence = []
-    uncertain = []
-    configs = cve.get("configurations") or []
-    for match in _walk_cpe_matches(configs):
-        criteria = match.get("criteria") or match.get("cpe23Uri") or ""
-        if not criteria.startswith(expected):
+    """Conservatively evaluate complete NVD configuration logic for one detected product."""
+    configurations = cve.get("configurations") or []
+    root_states, matched_evidence, uncertain = [], [], []
+    for config in configurations:
+        if not isinstance(config, dict):
+            root_states.append(None)
+            uncertain.append("Malformed NVD configuration")
             continue
-        if match.get("vulnerable") is False:
-            continue
-        fields = criteria.split(":")
-        criteria_version = fields[5] if len(fields) > 5 else "*"
-        reason = None
-        if criteria_version not in ("*", "-", ""):
-            cmp = _compare_versions(detected_version, criteria_version)
-            if cmp is None:
-                if detected_version == criteria_version:
-                    reason = "exact_version"
-                else:
-                    uncertain.append(f"{criteria}: version format is not safely comparable")
-                    continue
-            elif cmp == 0:
-                reason = "exact_version"
-            else:
-                continue
-        else:
-            lower_inc = match.get("versionStartIncluding")
-            lower_exc = match.get("versionStartExcluding")
-            upper_inc = match.get("versionEndIncluding")
-            upper_exc = match.get("versionEndExcluding")
-            bounds = [(lower_inc, ">="), (lower_exc, ">"), (upper_inc, "<="), (upper_exc, "<")]
-            if not any(v for v, _ in bounds):
-                uncertain.append(f"{criteria}: wildcard version without explicit version bounds")
-                continue
-            valid = True
-            for bound, op in bounds:
-                if not bound:
-                    continue
-                cmp = _compare_versions(detected_version, bound)
-                if cmp is None:
-                    valid = False
-                    break
-                if (op == ">=" and cmp < 0) or (op == ">" and cmp <= 0) or (op == "<=" and cmp > 0) or (op == "<" and cmp >= 0):
-                    valid = False
-                    break
-            if not valid:
-                if any(_compare_versions(detected_version, b) is None for b, _ in bounds if b):
-                    uncertain.append(f"{criteria}: version bounds cannot be compared safely")
-                continue
-            reason = "version_range_match"
-        evidence.append({
-            "criteria": criteria,
-            "reason": reason,
-            "versionStartIncluding": match.get("versionStartIncluding"),
-            "versionStartExcluding": match.get("versionStartExcluding"),
-            "versionEndIncluding": match.get("versionEndIncluding"),
-            "versionEndExcluding": match.get("versionEndExcluding"),
-        })
-    if evidence:
+        nodes = config.get("nodes") or []
+        node_states, config_evidence, config_uncertain = [], [], []
+        for node in nodes:
+            state, evidence, reasons = _evaluate_config_node(
+                node, vendor, product, detected_version, part
+            )
+            node_states.append(state)
+            config_evidence.extend(evidence)
+            config_uncertain.extend(reasons)
+        config_state = _combine_states(node_states, config.get("operator", "OR"))
+        if config.get("negate") is True:
+            config_state = None if config_state is None else not config_state
+            if config_state is True:
+                config_state = None
+                config_uncertain.append("Negated top-level NVD condition is not positive vulnerability evidence")
+        root_states.append(config_state)
+        if config_state is True:
+            matched_evidence.extend(item for item in config_evidence if item.get("vulnerable") is True)
+        uncertain.extend(config_uncertain)
+
+    # NVD configuration objects are alternatives: one fully satisfied vulnerable path is sufficient.
+    overall = _combine_states(root_states, "OR")
+    if overall is True and matched_evidence:
         return {
             "status": "version_match",
             "confidence": "medium",
-            "evidence": evidence,
-            "limitations": ["CPE/version-range match is not proof of exploitability; review full NVD configuration logic, vendor backports, build options, and runtime exposure."],
+            "evidence": matched_evidence,
+            "limitations": [
+                "The complete evaluated NVD configuration path matched, but this is still not proof of exploitability.",
+                "Verify vendor backports, build options, platform constraints, and runtime exposure.",
+            ],
         }
-    if uncertain:
+    if overall is True and not matched_evidence:
+        uncertain.append("Configuration matched, but no vulnerable=true CPE for the detected product was established")
+    if overall is None or uncertain:
         return {
             "status": "candidate_unverified",
             "confidence": "low",
             "evidence": [],
-            "limitations": uncertain + ["NVD search result alone does not establish that this installed version is vulnerable."],
+            "limitations": list(dict.fromkeys(uncertain)) + [
+                "Incomplete host inventory or ambiguous NVD logic prevents a confirmed applicability match."
+            ],
         }
     return {
         "status": "not_matched_by_nvd_cpe",
         "confidence": "low",
         "evidence": [],
-        "limitations": ["No matching vulnerable CPE/version range was found in the returned NVD configuration data; this is not proof the product is safe."],
+        "limitations": [
+            "No complete vulnerable NVD configuration path matched the detected product/version.",
+            "This is not proof the product is safe.",
+        ],
     }
-
 
 def classify_exploit(row, product, version):
     """Classify Searchsploit rows conservatively using title/product/version evidence."""
