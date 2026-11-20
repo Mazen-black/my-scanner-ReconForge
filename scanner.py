@@ -578,6 +578,8 @@ def main():
     session = requests.Session()
 
     target = args.target
+    started_at = datetime.now(timezone.utc)
+    started_monotonic = time.monotonic()
     print(f"بدء فحص: {target} على البورتات: {args.ports} (nmap args: {args.nmap_args})")
 
     scanner = nmap.PortScanner()
@@ -595,13 +597,18 @@ def main():
         sys.exit(1)
 
     results = []
+    completed_at = datetime.now(timezone.utc)
     scan_metadata = {
         "schema_version": REPORT_SCHEMA_VERSION,
-        "scanner_version": SCANNER_VERSION,
+        "scanner": {"name": "ReconForge", "version": SCANNER_VERSION},
         "requested_target": target,
+        "resolved_hosts": hosts,
         "ports": args.ports,
         "nmap_arguments": args.nmap_args,
-        "started_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "started_at_utc": started_at.isoformat(timespec="seconds"),
+        "completed_at_utc": completed_at.isoformat(timespec="seconds"),
+        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+        "open_services": len(results),
     }
     for host in hosts:
         try:
@@ -661,8 +668,19 @@ def main():
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
     safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target).strip("._") or "target"
     filename = args.output or f"scan_{safe_target}_{timestamp}.json"
+    report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "metadata": scan_metadata,
+        "findings": results,
+        "summary": {
+            "hosts_scanned": len(hosts),
+            "open_services": len(results),
+            "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
+            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
+        },
+    }
     try:
-        write_json_report(filename, results)
+        write_json_report(filename, report)
     except OSError as e:
         print(f"تعذر حفظ التقرير: {e}")
         sys.exit(1)
