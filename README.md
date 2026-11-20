@@ -14,8 +14,9 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Compares detected product/version information with available CPE and version-range data where possible.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
-- Produces JSON output with service details, matching evidence, and assessment limitations.
-- Includes offline unit and integration tests for CPE conversion, version applicability, result classification, and report structure.
+- Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
+- Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
+- Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
 
 ## How it works
 
@@ -107,6 +108,13 @@ python -m unittest discover -s tests -v
 ```
 
 ## Output and privacy
+
+Reports use a versioned JSON envelope:
+
+- `schema_version`: report format version.
+- `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
+- `summary`: host, open-service, CVE-candidate, and Searchsploit-reference counts.
+- `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
