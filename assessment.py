@@ -523,7 +523,7 @@ def analyze_web_content(html, robots_txt=None, sitemap_xml=None):
         ],
     }
 
-def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None):
+def build_report_entry(host, port, state, service, product, version, cpes_tested, cves, exploits, fingerprint=None, http_assessment=None, web_intelligence=None):
     """Stable, readable JSON shape for one discovered service."""
     return {
         "host": host,
@@ -540,6 +540,7 @@ def build_report_entry(host, port, state, service, product, version, cpes_tested
             "technology_fingerprint": fingerprint or {},
         },
         "http_assessment": http_assessment,
+        "web_intelligence": web_intelligence,
         "cve_assessment": cves,
         "searchsploit_assessment": exploits,
         "assessment_limits": [
