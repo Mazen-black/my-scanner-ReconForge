@@ -50,8 +50,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.2"
-SCANNER_VERSION = "0.3.0"
+REPORT_SCHEMA_VERSION = "1.3"
+SCANNER_VERSION = "0.4.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -540,6 +540,49 @@ def write_json_report(filename, results):
         raise
 
 
+
+
+HTTP_PROBE_PORTS = {80, 443, 8000, 8080, 8081, 8443, 8888}
+
+
+def probe_http_metadata(host, port, port_data):
+    """Make one bounded HEAD request to the service root; never follow redirects."""
+    service = str((port_data or {}).get("name") or "").lower()
+    tunnel = str((port_data or {}).get("tunnel") or "").lower()
+    if port not in HTTP_PROBE_PORTS and not any(token in service for token in ("http", "https")):
+        return {"status": "skipped", "reason": "not_recognized_as_http"}
+    is_https = tunnel in ("ssl", "tls") or service in ("https", "https-alt") or port in (443, 8443)
+    scheme = "https" if is_https else "http"
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    url = f"{scheme}://{url_host}:{port}/"
+    try:
+        response = requests.head(
+            url, timeout=(3, 5), allow_redirects=False, verify=True,
+            headers={"User-Agent": "ReconForge/0.4.0 (authorized security assessment)"},
+        )
+    except requests.exceptions.SSLError:
+        return {"status": "probe_error", "error": "tls_validation_failed",
+                "limitations": ["TLS certificate validation failed; no insecure retry was attempted."]}
+    except requests.exceptions.Timeout:
+        return {"status": "probe_error", "error": "request_timeout"}
+    except requests.exceptions.RequestException:
+        return {"status": "probe_error", "error": "http_request_failed"}
+
+    set_cookie_headers = []
+    raw_headers = getattr(getattr(response, "raw", None), "headers", None)
+    if raw_headers is not None and hasattr(raw_headers, "getlist"):
+        set_cookie_headers = raw_headers.getlist("Set-Cookie")
+    elif response.headers.get("Set-Cookie"):
+        set_cookie_headers = [response.headers.get("Set-Cookie")]
+    from assessment import analyze_http_security
+    analysis = analyze_http_security(response.headers, set_cookie_headers, is_https=is_https)
+    return {
+        "status": "response_received", "scheme": scheme, "status_code": response.status_code,
+        "redirect_location_present": bool(response.headers.get("Location")),
+        "security_analysis": analysis,
+    }
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="بورت سكانر محسّن: nmap + CVEs من NVD + بحث Exploit-DB محلي")
@@ -550,6 +593,8 @@ def parse_args(argv=None):
     parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
     parser.add_argument("--results-per-page", type=int, default=10,
                         help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
+    parser.add_argument("--http-probe", action="store_true",
+                        help="حلل HTTP headers وخصائص cookies بطلب HEAD واحد فقط لكل خدمة ويب")
     parser.add_argument("--no-exploitdb", action="store_true",
                         help="عطّل بحث searchsploit المحلي")
     parser.add_argument("--output", "-o", default=None,
@@ -640,6 +685,11 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
+            http_assessment = {"status": "not_requested"}
+            if args.http_probe:
+                http_assessment = probe_http_metadata(host, port, port_data)
+                print(f"  HTTP assessment: {http_assessment.get('status')}")
+
             results.append(build_report_entry(
                 host=host,
                 port=port,
@@ -651,6 +701,7 @@ def main():
                 cves=cves,
                 exploits=exploits,
                 fingerprint=build_technology_fingerprint(port_data),
+                http_assessment=http_assessment,
             ))
 
     completed_at = datetime.now(timezone.utc)
