@@ -38,6 +38,7 @@ from assessment import (
     classify_exploit,
     cpe22_to_cpe23,
     build_technology_fingerprint,
+    assess_network_exposure,
 )
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -50,8 +51,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.4"
-SCANNER_VERSION = "0.5.0"
+REPORT_SCHEMA_VERSION = "1.5"
+SCANNER_VERSION = "0.6.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -778,6 +779,7 @@ def main():
                 fingerprint=build_technology_fingerprint(port_data),
                 http_assessment=http_assessment,
                 web_intelligence=web_intelligence,
+                network_exposure=assess_network_exposure(port, service, product),
             ))
 
     completed_at = datetime.now(timezone.utc)
@@ -805,6 +807,7 @@ def main():
             "open_services": len(results),
             "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
             "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
+            "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
         },
     }
     try:
