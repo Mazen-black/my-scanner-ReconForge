@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_cve_applicability, build_report_entry, classify_exploit, cpe22_to_cpe23
+from assessment import assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -120,6 +120,30 @@ class SearchsploitTests(unittest.TestCase):
         self.assertIn("assessment_limits", report)
         self.assertIn("cve_assessment", report)
         self.assertNotIn("scan_metadata", report)
+
+
+class TechnologyFingerprintTests(unittest.TestCase):
+    def test_extracts_observed_nmap_fields_and_product_hints(self):
+        result = build_technology_fingerprint({
+            "name": "http", "product": "Apache httpd", "version": "2.4.57",
+            "extrainfo": "OpenSSL/3.0.2", "tunnel": "ssl", "method": "probed",
+            "conf": "10", "cpe": ["cpe:/a:apache:http_server:2.4.57"],
+        })
+        self.assertEqual(result["observed"]["version"], "2.4.57")
+        categories = {item["category"] for item in result["technology_stack"]}
+        self.assertIn("web_server", categories)
+        self.assertIn("openssl", categories)
+        self.assertIn("encrypted_transport", categories)
+
+    def test_does_not_invent_technology_without_evidence(self):
+        result = build_technology_fingerprint({"name": "unknown"})
+        self.assertEqual(result["technology_stack"], [])
+        self.assertEqual(result["observed"]["product"], None)
+
+    def test_report_entry_includes_fingerprint(self):
+        fingerprint = build_technology_fingerprint({"name": "ssh", "product": "OpenSSH"})
+        report = build_report_entry("127.0.0.1", 22, "open", "ssh", "OpenSSH", "", [], [], [], fingerprint)
+        self.assertIn("technology_fingerprint", report["identification_evidence"])
 
 
 if __name__ == "__main__":
