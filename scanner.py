@@ -51,8 +51,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.5"
-SCANNER_VERSION = "0.6.0"
+REPORT_SCHEMA_VERSION = "1.6"
+SCANNER_VERSION = "0.7.0"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -806,7 +806,7 @@ def main():
             "hosts_scanned": len(hosts),
             "open_services": len(results),
             "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
-            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
+            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),\n            "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
             "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
         },
     }
