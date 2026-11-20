@@ -11,6 +11,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 ## Features
 
 - Uses Nmap for port scanning and service/version detection.
+- Identifies potentially sensitive exposed network services (databases, remote administration, file sharing, container APIs, and legacy cleartext protocols) with evidence, severity, and remediation guidance.
 - Builds an evidence-backed technology fingerprint from observed product, version, service, TLS tunnel, CPE, and extra-info fields.
 - Optional HTTP security review (`--http-probe`) inspects response headers and cookie attributes using one bounded HEAD request per recognized web service.
 - Optional web intelligence (`--web-intel`) analyzes a bounded root HTML response for CMS/JavaScript-library hints and checks fixed same-origin `robots.txt` and `sitemap.xml` paths.
@@ -27,10 +28,11 @@ A Python-based network service scanner that combines Nmap service/version detect
 2. The scanner builds product/CPE-based queries and retrieves candidate CVE records from NVD.
 3. Nmap metadata is normalized into observed identity fields and conservative technology hints with evidence provenance.
 4. NVD configuration trees are evaluated with three-valued logic (true / false / unknown), preserving nested AND, OR, and negate conditions. A required component that is not present in the detected inventory is not assumed to match.
-5. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
+5. Known sensitive service ports are mapped to conservative network-exposure observations and hardening recommendations; an open port alone is not labelled an exploitable vulnerability.
+6. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
 6. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
 7. When `--web-intel` is enabled, bounded GET requests inspect `/`, `/robots.txt`, and `/sitemap.xml` on the same scanned host only; redirects and external asset fetching are disabled.
-8. A JSON report is written for further review.
+9. A JSON report is written for further review.
 
 CVE matching and Searchsploit relevance classification are best-effort heuristics. Vendor version schemes, incomplete banners, CPE aliases, and complex NVD configuration logic can lead to false positives or false negatives. Always validate results against vendor advisories and the actual target.
 
@@ -135,11 +137,12 @@ Reports use a versioned JSON envelope:
 
 - `schema_version`: report format version.
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
-- `summary`: host, open-service, CVE-candidate, and Searchsploit-reference counts.
+- `summary`: host, open-service, CVE-candidate, Searchsploit-reference, and network-exposure observation counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 - `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 - `web_intelligence` stores CMS/library hints and summary counts from the optional bounded HTML, robots, and sitemap inspection, or `not_requested` when disabled.
+- `network_exposure` lists sensitive open-service observations, their evidence, severity, and remediation guidance.
 
 Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
 
@@ -152,6 +155,7 @@ Reports may contain target addresses, port/service information, software version
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches.
 - The HTTP assessment checks only a single HEAD response from `/`; it does not crawl pages, inspect JavaScript, test forms, or validate application behavior.
 - Web technology labels are heuristic, based on visible metadata and asset URL patterns; versions can be missing or spoofed. The scanner does not download JavaScript, crawl the application, or verify technology runtime state.
+- Known-port exposure rules are heuristic. Services may use non-standard ports, and a port number does not conclusively identify the running service.
 - The scanner does not exploit vulnerabilities and should not be used as a substitute for a professional security assessment.
 
 ## Responsible use
