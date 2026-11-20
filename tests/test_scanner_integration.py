@@ -81,5 +81,37 @@ class CheckCVEIntegrationTests(unittest.TestCase):
         self.assertEqual(mock_fetch.call_count, 2)
 
 
+class HTTPProbeTests(unittest.TestCase):
+    @patch("scanner.requests.head")
+    def test_http_probe_does_not_follow_redirects(self, mock_head):
+        class FakeHeaders(dict):
+            def getlist(self, name):
+                return []
+        class FakeResponse:
+            status_code = 302
+            headers = {"Location": "https://redirect.invalid/"}
+            raw = type("Raw", (), {"headers": FakeHeaders()})()
+        mock_head.return_value = FakeResponse()
+        result = scanner.probe_http_metadata("192.0.2.10", 80, {"name": "http"})
+        self.assertEqual(result["status"], "response_received")
+        self.assertTrue(result["redirect_location_present"])
+        self.assertFalse(mock_head.call_args.kwargs["allow_redirects"])
+        self.assertTrue(mock_head.call_args.kwargs["verify"])
+
+    @patch("scanner.requests.head")
+    def test_http_probe_skips_non_http_service(self, mock_head):
+        result = scanner.probe_http_metadata("192.0.2.10", 22, {"name": "ssh"})
+        self.assertEqual(result["status"], "skipped")
+        mock_head.assert_not_called()
+
+    @patch("scanner.requests.head")
+    def test_http_probe_does_not_disable_tls_verification(self, mock_head):
+        import requests
+        mock_head.side_effect = requests.exceptions.SSLError()
+        result = scanner.probe_http_metadata("192.0.2.10", 443, {"name": "https"})
+        self.assertEqual(result["error"], "tls_validation_failed")
+        self.assertTrue(mock_head.call_args.kwargs["verify"])
+
+
 if __name__ == "__main__":
     unittest.main()
