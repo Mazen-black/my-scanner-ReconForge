@@ -225,7 +225,7 @@ class NetworkExposureAssessmentTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["severity"], "high")
         self.assertEqual(findings[0]["status"], "exposed_service_observed")
-        self.assertIn("private interfaces", findings[0]["recommendation"])
+        self.assertIn("public interfaces", findings[0]["recommendation"])
         self.assertIn("not proof", " ".join(findings[0]["limitations"]))
 
     def test_flags_unauthenticated_docker_api_as_critical_observation(self):
