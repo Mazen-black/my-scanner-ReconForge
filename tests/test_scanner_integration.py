@@ -113,5 +113,46 @@ class HTTPProbeTests(unittest.TestCase):
         self.assertTrue(mock_head.call_args.kwargs["verify"])
 
 
+class WebIntelligenceProbeTests(unittest.TestCase):
+    @patch("scanner._bounded_same_origin_get")
+    def test_web_intel_fetches_only_three_fixed_same_origin_paths(self, mock_get):
+        mock_get.side_effect = [
+            ('<meta name="generator" content="Joomla 4.2">', None),
+            ("User-agent: *\nDisallow: /admin", None),
+            ("<urlset><url><loc>https://lab.test/</loc></url></urlset>", None),
+        ]
+        result = scanner.probe_web_intelligence("192.0.2.20", 8080, {"name": "http"})
+        self.assertEqual(result["status"], "response_received")
+        self.assertEqual(mock_get.call_args_list[0].args[0], "http://192.0.2.20:8080/")
+        self.assertEqual(mock_get.call_args_list[1].args[0], "http://192.0.2.20:8080/robots.txt")
+        self.assertEqual(mock_get.call_args_list[2].args[0], "http://192.0.2.20:8080/sitemap.xml")
+
+    @patch("scanner._bounded_same_origin_get")
+    def test_web_intel_does_not_continue_after_root_failure(self, mock_get):
+        mock_get.return_value = (None, "request_timeout")
+        result = scanner.probe_web_intelligence("192.0.2.20", 80, {"name": "http"})
+        self.assertEqual(result["status"], "probe_error")
+        mock_get.assert_called_once()
+
+    @patch("scanner.requests.get")
+    def test_bounded_get_disables_redirects_and_closes_response(self, mock_get):
+        class Response:
+            status_code = 200
+            encoding = "utf-8"
+            closed = False
+            def iter_content(self, chunk_size):
+                yield b"hello"
+            def close(self):
+                self.closed = True
+        response = Response()
+        mock_get.return_value = response
+        content, error = scanner._bounded_same_origin_get("http://192.0.2.20/", 20)
+        self.assertEqual(content, "hello")
+        self.assertIsNone(error)
+        self.assertFalse(mock_get.call_args.kwargs["allow_redirects"])
+        self.assertTrue(mock_get.call_args.kwargs["verify"])
+        self.assertTrue(response.closed)
+
+
 if __name__ == "__main__":
     unittest.main()
