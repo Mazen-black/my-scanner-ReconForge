@@ -64,6 +64,7 @@ def _cve_rows(cves):
             f'<td><span class="severity {priority_css}">{_e(priority_level)}</span> <span class="muted">({_e(priority_text)})</span></td>'
             f'<td>{_e(status)}'
             + f'<div class="muted">Applicability confidence: {_e(applicability.get("applicability_confidence", applicability.get("confidence", "unknown")))}; exploitability: {_e(applicability.get("exploitability_confidence", "unknown"))}</div>'
+            + (f'<div class="muted">Sources: {_e("; ".join(applicability.get("evidence_sources") or []))}</div>' if applicability.get("evidence_sources") else '')
             + (f'<div class="muted">Why: {_e("; ".join(applicability.get("confidence_reasons") or []))}</div>' if applicability.get("confidence_reasons") else '')
             + (f'<div class="muted">Evidence gaps: {_e("; ".join(applicability.get("evidence_gaps") or []))}</div>' if applicability.get("evidence_gaps") else '')
             + (f'<div class="muted">CPE: {_e(applicability.get("cpe_version_status"))}; constraint: {_e(contextual.get("kind"))}</div>' if contextual else '')
@@ -146,6 +147,7 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             f'<td>{_e(assessment.get("confidence", "low"))}</td>'
             f'<td>{_e(triage.get("status", "manual_review_required"))}'
             + f'<div class="muted">Applicability: {_e(triage.get("applicability_confidence", "unknown"))}; exploitability: {_e(triage.get("exploitability_confidence", "unknown"))}</div>'
+            + (f'<div class="muted">Sources: {_e("; ".join(triage.get("evidence_sources") or []))}</div>' if triage.get("evidence_sources") else '')
             + (f'<div class="muted">Why: {_e("; ".join(triage.get("confidence_reasons") or []))}</div>' if triage.get("confidence_reasons") else '')
             + (f'<div class="muted">Gaps: {_e("; ".join(triage.get("evidence_gaps") or []))}</div>' if triage.get("evidence_gaps") else '')
             + '</td>'

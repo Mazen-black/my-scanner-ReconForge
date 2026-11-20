@@ -231,6 +231,7 @@ class HTMLReportTests(unittest.TestCase):
         findings[0]["cve_assessment"][0]["applicability"].update({
             "applicability_confidence": "medium",
             "exploitability_confidence": "unknown",
+            "evidence_sources": ["NVD CPE data", "Nmap identification"],
             "confidence_reasons": ["Exact CPE version matched."],
             "evidence_gaps": ["Vendor backport status is unknown."],
         })
@@ -244,12 +245,15 @@ class HTMLReportTests(unittest.TestCase):
                 "status": "manual_review_required",
                 "applicability_confidence": "low",
                 "exploitability_confidence": "unknown",
+                "evidence_sources": ["Local Exploit-DB metadata"],
                 "confidence_reasons": ["Title match is not target validation."],
                 "evidence_gaps": ["Build provenance is unknown."],
             },
         }]
         html = render_html_report(findings)
         self.assertIn("Applicability confidence: medium; exploitability: unknown", html)
+        self.assertIn("NVD CPE data; Nmap identification", html)
+        self.assertIn("Local Exploit-DB metadata", html)
         self.assertIn("Exact CPE version matched.", html)
         self.assertIn("Vendor backport status is unknown.", html)
         self.assertIn("Title match is not target validation.", html)
