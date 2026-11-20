@@ -485,7 +485,7 @@ def validate_ports(value):
     if not ports or ports != value:
         raise ValueError("Ports cannot be empty or contain surrounding whitespace.")
     for item in ports.split(","):
-        if not re.fullmatch(r"\\d+(?:-\\d+)?", item):
+        if not re.fullmatch(r"\d+(?:-\d+)?", item):
             raise ValueError(f"Invalid port expression: {item!r}")
         parts = [int(part) for part in item.split("-")]
         if any(port < 1 or port > 65535 for port in parts):
