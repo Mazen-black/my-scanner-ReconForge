@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.9.0 · Report schema 1.8
+> **Current version:** Scanner 0.10.6 · Report schema 1.15
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -20,13 +20,17 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Queries the [NIST National Vulnerability Database (NVD)](https://nvd.nist.gov/) for potentially relevant CVEs.
 - Evaluates NVD CPE criteria, version bounds, nested nodes, and AND/OR/negate logic conservatively; unknown environment requirements remain unverified.
 - Optionally searches the local Exploit-DB database with `searchsploit`.
-- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe manual validation guidance; exploit code is never executed.
+- Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, conservative platform compatibility, product/version title relevance, and safe manual validation guidance; exploit code is never executed.
+- Reads only allowlisted metadata comments from the first 80 lines of local Exploit-DB files to report explicitly documented target architecture, authentication, privilege, and prerequisite hints; strict normalization maps only known values and preserves unrecognized wording as unknown raw evidence.
+- Optional Nmap OS fingerprinting (--os-detection) adds -O explicitly; OS-family compatibility remains a coarse research hint, not proof of exploitability.
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
 - Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
 - Generates a standalone HTML dashboard with escaped untrusted values, and can render both current versioned JSON envelopes and legacy list reports.
 - Supports `--no-nvd` for offline operation when NVD is unavailable.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
+- Adds an evidence-confidence model that separates CVE applicability confidence from exploitability confidence, records evidence sources/reasons/gaps, and never treats CVSS severity or an Exploit-DB title match as proof of exploitability.
+- Correlates Exploit-DB references only through explicit CVE identifiers, collapses duplicate EDB hits while retaining observations, and exposes related references sharing an explicit CVE link.
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
 
@@ -37,7 +41,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 3. NVD configuration trees are evaluated with conservative three-valued logic, preserving nested AND, OR, and negate conditions.
 4. Known sensitive service ports produce network-exposure observations with evidence and hardening recommendations; an open port alone is not labelled an exploitable vulnerability.
 5. If Searchsploit is installed and enabled, local exploit references are searched and heuristically classified.
-6. Exploit intelligence enriches those references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe validation guidance. Every reference is marked `not_executed`.
+6. Exploit intelligence enriches those references with validated Exploit-DB links, explicit CVE-title correlation, platform/type metadata, and safe validation guidance. If the local Exploit-DB source file is available, only allowlisted key/value comments from its first 80 lines are read; source code is never evaluated or executed. Missing architecture and prerequisite details remain unknown. Every reference is marked `not_executed`.
 7. The report includes the service fingerprint, CVE assessment, network exposure observations, and exploit intelligence.
 8. When `--http-probe` is enabled, one HEAD request to `/` is made for each recognized HTTP service; redirects are not followed and TLS certificate verification stays enabled.
 9. When `--web-intel` is enabled, bounded GET requests inspect `/`, `/robots.txt`, and `/sitemap.xml` on the same scanned host only; redirects and external asset fetching are disabled.
@@ -93,6 +97,14 @@ Specify ports and generate both JSON and HTML reports:
 ```bash
 python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
+
+Enable optional OS fingerprinting when you have authorization and the required privileges:
+
+```bash
+sudo python scanner.py --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
+```
+
+This option adds Nmap's -O OS-detection probe. It may require root/raw-socket privileges and can still return no reliable match. Without --os-detection, the default scan remains unchanged. ReconForge accepts only the first Nmap OS match at 90% accuracy or higher; lower-confidence or missing matches remain unknown. Broad OS-family matches are not proof of architecture or exploit compatibility.
 
 Run without NVD requests when offline or when the NVD API is unavailable:
 

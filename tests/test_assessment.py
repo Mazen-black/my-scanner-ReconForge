@@ -1,5 +1,5 @@
 import unittest
-from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence
+from assessment import assess_network_exposure, analyze_web_content, analyze_http_security, assess_cve_applicability, build_report_entry, build_technology_fingerprint, classify_exploit, cpe22_to_cpe23, build_exploit_intelligence, apply_contextual_cve_constraints, assess_exploit_platform
 
 
 class CPEConversionTests(unittest.TestCase):
@@ -37,6 +37,19 @@ class CVEApplicabilityTests(unittest.TestCase):
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
         self.assertEqual(result["evidence"][0]["reason"], "exact_version")
+
+    def test_contextual_build_provenance_downgrades_broad_cpe_match(self):
+        base = {"status": "version_match", "confidence": "medium", "evidence": [{"reason": "exact_version"}]}
+        result = apply_contextual_cve_constraints("CVE-2011-2523", base)
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertEqual(result["cpe_version_status"], "version_match")
+        self.assertEqual(result["contextual_constraint"]["kind"], "build_provenance")
+        self.assertTrue(any("build/provenance" in item for item in result["limitations"]))
+
+    def test_contextual_constraint_does_not_change_unrelated_cve(self):
+        base = {"status": "version_match", "confidence": "medium", "evidence": []}
+        result = apply_contextual_cve_constraints("CVE-2024-12345", base)
+        self.assertEqual(result, base)
 
     def test_exact_version_mismatch_is_not_match(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.56:*:*:*:*:*:*:*"))
@@ -162,6 +175,11 @@ class SearchsploitTests(unittest.TestCase):
         result = classify_exploit({"Title": "WordPress plugin SQL Injection"}, "Apache httpd", "2.4.57")
         self.assertEqual(result["relevance"], "weak_or_unrelated")
 
+    def test_different_version_in_title_is_not_reported_as_version_match(self):
+        result = classify_exploit({"Title": "Apache httpd 2.2.8 - Example"}, "Apache httpd", "2.4.57")
+        self.assertEqual(result["relevance"], "product_match_different_version_in_title")
+        self.assertFalse(result["evidence"]["version_text_match"])
+
     def test_report_has_structured_service_and_limits(self):
         report = build_report_entry("127.0.0.1", 80, "open", "http", "Apache httpd", "2.4.57", [], [], [])
         self.assertEqual(report["service"]["version"], "2.4.57")
@@ -182,6 +200,16 @@ class TechnologyFingerprintTests(unittest.TestCase):
         self.assertIn("web_server", categories)
         self.assertIn("openssl", categories)
         self.assertIn("encrypted_transport", categories)
+
+    def test_normalizes_single_string_cpe_without_splitting_characters(self):
+        cpe = "cpe:/a:apache:http_server:2.2.8"
+        result = build_technology_fingerprint({"name": "http", "cpe": cpe})
+        self.assertEqual(result["observed"]["cpes"], [cpe])
+
+    def test_preserves_multiple_cpes_as_separate_identifiers(self):
+        cpes = ["cpe:/a:apache:http_server:2.2.8", "cpe:/a:openssl:openssl:0.9.8"]
+        result = build_technology_fingerprint({"name": "http", "cpe": cpes})
+        self.assertEqual(result["observed"]["cpes"], cpes)
 
     def test_does_not_invent_technology_without_evidence(self):
         result = build_technology_fingerprint({"name": "unknown"})
@@ -264,6 +292,100 @@ class WebContentAnalysisTests(unittest.TestCase):
 
 
 class ExploitIntelligenceTests(unittest.TestCase):
+    def test_platform_is_unknown_when_target_os_is_not_known(self):
+        result = assess_exploit_platform("windows", None)
+        self.assertEqual(result["status"], "unknown_target_platform")
+
+    def test_platform_mismatch_is_flagged_when_target_os_is_known(self):
+        result = assess_exploit_platform("windows", "linux")
+        self.assertEqual(result["status"], "platform_mismatch_candidate")
+        self.assertEqual(result["confidence"], "medium")
+
+    def test_unix_exploit_platform_is_not_rejected_for_linux_target(self):
+        result = assess_exploit_platform("unix", "linux")
+        self.assertEqual(result["status"], "platform_family_match")
+
+    def test_platform_mismatch_changes_overall_exploit_triage(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "123", "title": "Example Product 1.0 exploit",
+                "platform": "Windows",
+                "assessment": {
+                    "relevance": "product_and_version_match",
+                    "confidence": "low",
+                    "evidence": {"version_text_match": True, "version_candidates_in_title": ["1.0"]},
+                },
+            }],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(result["triage"]["status"], "platform_mismatch_review")
+        self.assertEqual(result["triage"]["cve_status"], "manual_cve_correlation_required")
+        self.assertEqual(
+            result["applicability_evidence"]["requirements_assessment"],
+            "unknown_not_documented_in_local_metadata",
+        )
+
+    def test_different_version_in_exploit_title_is_not_treated_as_applicable(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "124", "title": "Example Product 2.0 remote exploit",
+                "platform": "Linux",
+                "assessment": {
+                    "relevance": "product_match_different_version_in_title",
+                    "confidence": "low",
+                    "evidence": {"version_text_match": False, "version_candidates_in_title": ["2.0"]},
+                },
+            }],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(result["triage"]["status"], "different_version_candidate")
+
+    def test_exploit_intelligence_uses_explicit_local_metadata_only(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "777", "title": "Example Product 1.0",
+                "local_metadata": {
+                    "target_architecture": {"value": "x86_64", "source": "local_exploitdb_file_header", "line": 2},
+                    "required_privileges": {"value": "root", "source": "local_exploitdb_file_header", "line": 3},
+                },
+                "normalized_metadata": {
+                    "required_privileges": {"level": "elevated", "raw_value": "root"},
+                    "authentication_required": {"status": "no", "raw_value": "no"},
+                },
+                "assessment": {"relevance": "product_version_title_match_manual_validation"},
+            }], [], target_platform="linux"
+        )[0]
+        evidence = result["applicability_evidence"]
+        self.assertEqual(evidence["architecture_assessment"], "target_architecture_documented_in_local_metadata")
+        self.assertEqual(evidence["target_architecture"]["value"], "x86_64")
+        self.assertEqual(evidence["requirements_assessment"], "documented_in_local_metadata")
+        self.assertEqual(evidence["documented_requirements"]["required_privileges"]["value"], "root")
+        self.assertEqual(evidence["normalized_requirements"]["required_privileges"]["level"], "elevated")
+        self.assertEqual(evidence["normalized_requirements"]["authentication_required"]["status"], "no")
+
+    def test_missing_local_metadata_stays_unknown(self):
+        result = build_exploit_intelligence(
+            [{"id": "778", "title": "Example Product", "assessment": {"relevance": "product_match_version_unconfirmed"}}],
+            [], target_platform="linux"
+        )[0]
+        evidence = result["applicability_evidence"]
+        self.assertEqual(evidence["architecture_assessment"], "unknown_not_inferred_from_platform_label")
+        self.assertEqual(evidence["requirements_assessment"], "unknown_not_documented_in_local_metadata")
+        self.assertIsNone(evidence["target_architecture"])
+
+    def test_exploit_intelligence_records_platform_compatibility(self):
+        result = build_exploit_intelligence(
+            [{"id": "123", "title": "Example", "platform": "windows"}],
+            [],
+            target_platform="linux",
+        )[0]
+        self.assertEqual(
+            result["platform_compatibility"]["status"],
+            "platform_mismatch_candidate",
+        )
+
     def test_adds_official_exploit_db_reference_and_cve_correlation(self):
         result = build_exploit_intelligence(
             [{"id": "12345", "title": "Apache httpd CVE-2024-12345", "type": "remote",
@@ -285,11 +407,88 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(result["cve_correlation"]["status"], "no_explicit_cve_link")
         self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], [])
 
+    def test_cve_correlation_carries_separate_review_priority_evidence(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "125", "title": "Example CVE-2024-12345",
+                "assessment": {"relevance": "product_match_version_unconfirmed"},
+            }],
+            [{
+                "id": "CVE-2024-12345", "cvss": 8.8,
+                "applicability": {"status": "candidate_unverified", "confidence": "low"},
+                "risk_priority": {"priority": "Medium", "score": 42.0},
+            }],
+        )[0]
+        linked = result["cve_correlation"]["matched_cve_applicability"][0]
+        self.assertEqual(linked["applicability_status"], "candidate_unverified")
+        self.assertEqual(linked["review_priority"]["score"], 42.0)
+        self.assertEqual(linked["review_priority"]["priority"], "Medium")
+
+    def test_cve_correlation_preserves_unverified_applicability(self):
+        result = build_exploit_intelligence(
+            [{"id": "123", "title": "Example CVE-2011-2523 exploit"}],
+            [{"id": "CVE-2011-2523", "cvss": 9.8,
+              "applicability": {"status": "candidate_unverified", "confidence": "low",
+                                "contextual_constraint": {"kind": "build_provenance"}}}],
+        )[0]
+        self.assertEqual(result["cve_correlation"]["status"], "explicit_cve_match_applicability_unverified")
+        self.assertEqual(result["triage"]["status"], "cve_candidate_unverified")
+        self.assertEqual(result["cve_correlation"]["matched_cve_applicability"][0]["contextual_constraint"]["kind"], "build_provenance")
+
     def test_rejects_non_numeric_exploit_db_identifier_for_url(self):
         result = build_exploit_intelligence(
             [{"id": "../../etc/passwd", "title": "Example"}], []
         )[0]
         self.assertIsNone(result["reference"]["url"])
+
+    def test_duplicate_exploit_db_ids_are_collapsed_and_observations_preserved(self):
+        result = build_exploit_intelligence([
+            {"id": "12345", "title": "Example CVE-2024-12345", "platform": "Linux"},
+            {"id": "12345", "title": "Example CVE-2024-12345 (alternate search hit)", "platform": "Linux"},
+        ], [{"id": "CVE-2024-12345"}])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["reference"]["id"], "12345")
+        self.assertEqual(len(result[0]["cve_correlation"]["duplicate_observations"]), 1)
+
+    def test_duplicate_edb_hit_preserves_explicit_cve_id_from_alternate_observation(self):
+        result = build_exploit_intelligence([
+            {"id": "12346", "title": "Generic Example issue"},
+            {"id": "12346", "title": "Generic Example issue CVE-2024-12345"},
+        ], [{"id": "CVE-2024-12345"}])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
+        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_title"], [])
+        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_source_fields"], ["CVE-2024-12345"])
+
+    def test_multiple_exploit_references_share_only_explicit_cve_links(self):
+        result = build_exploit_intelligence([
+            {"id": "100", "title": "Example CVE-2024-12345 exploit"},
+            {"id": "200", "title": "Another PoC CVE-2024-12345"},
+            {"id": "300", "title": "Similar Example product remote issue"},
+        ], [{"id": "CVE-2024-12345"}])
+        by_id = {item["reference"]["id"]: item for item in result}
+        self.assertEqual(by_id["100"]["cve_correlation"]["related_exploit_db_ids"], ["200"])
+        self.assertEqual(by_id["200"]["cve_correlation"]["related_exploit_db_ids"], ["100"])
+        self.assertEqual(by_id["300"]["cve_correlation"]["related_exploit_db_ids"], [])
+        self.assertEqual(by_id["100"]["cve_correlation"]["link_confidence"], "high_for_identifier_link_only")
+
+    def test_structured_explicit_cve_id_is_supported_without_title_guessing(self):
+        result = build_exploit_intelligence([
+            {"id": "101", "title": "Generic product issue", "cve_ids": ["CVE-2024-12345", "not-a-cve"]}
+        ], [{"id": "CVE-2024-12345"}])[0]
+        self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
+        self.assertEqual(result["cve_correlation"]["link_basis"], "explicit_cve_identifier_in_source_fields")
+
+    def test_duplicate_cve_records_are_not_counted_twice(self):
+        result = build_exploit_intelligence([
+            {"id": "102", "title": "Example CVE-2024-12345"}
+        ], [
+            {"id": "CVE-2024-12345", "cvss": 7.5},
+            {"id": "CVE-2024-12345", "cvss": 9.8},
+        ])[0]
+        linked = result["cve_correlation"]["matched_cve_applicability"]
+        self.assertEqual(len(linked), 1)
+        self.assertEqual(linked[0]["cvss"], 7.5)
 
     def test_report_contains_exploit_intelligence(self):
         report = build_report_entry(
@@ -327,3 +526,58 @@ class NetworkExposureAssessmentTests(unittest.TestCase):
         report = build_report_entry("192.0.2.1", 3389, "open", "ms-wbt-server", "", "", [], [], [],
                                     network_exposure=finding)
         self.assertEqual(report["network_exposure"][0]["id"], "remote_access_exposure")
+
+
+class EvidenceConfidenceEngineTests(unittest.TestCase):
+    def test_exact_cpe_match_separates_applicability_from_exploitability(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [{
+            "vulnerable": True,
+            "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+        }]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["applicability_confidence"], "medium")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_sources"])
+        self.assertTrue(result["confidence_reasons"])
+        self.assertTrue(result["evidence_gaps"])
+
+    def test_version_range_match_has_explicit_evidence(self):
+        cve = {"configurations": [{"nodes": [{"operator": "OR", "cpeMatch": [{
+            "vulnerable": True,
+            "criteria": "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            "versionStartIncluding": "2.4.0",
+            "versionEndExcluding": "2.4.58",
+        }]}]}]}
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "version_match")
+        self.assertEqual(result["evidence"][0]["reason"], "version_range_match")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+
+    def test_incomplete_evidence_remains_low_and_lists_gaps(self):
+        result = assess_cve_applicability({}, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertEqual(result["applicability_confidence"], "low")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_gaps"])
+
+    def test_contextual_constraint_downgrades_confidence_and_adds_required_evidence(self):
+        base = {
+            "status": "version_match", "confidence": "medium",
+            "applicability_confidence": "medium", "exploitability_confidence": "unknown",
+            "evidence": [], "evidence_gaps": [],
+        }
+        result = apply_contextual_cve_constraints("CVE-2011-2523", base)
+        self.assertEqual(result["applicability_confidence"], "low")
+        self.assertEqual(result["exploitability_confidence"], "unknown")
+        self.assertTrue(result["evidence_gaps"])
+        self.assertTrue(result["confidence_reasons"])
+
+    def test_exploit_title_match_never_claims_exploitability(self):
+        intel = build_exploit_intelligence([{
+            "id": "123", "title": "Apache httpd 2.4.57 example", "platform": "Linux",
+            "assessment": {"relevance": "product_and_version_match"},
+        }], [], target_platform="linux")
+        triage = intel[0]["triage"]
+        self.assertEqual(triage["applicability_confidence"], "low")
+        self.assertEqual(triage["exploitability_confidence"], "unknown")
+        self.assertTrue(triage["evidence_gaps"])

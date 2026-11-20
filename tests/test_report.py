@@ -37,6 +37,19 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("High / Critical CVEs", html)
         self.assertIn(">1</div>", html)
 
+    def test_report_renders_host_os_fingerprint_and_escapes_it(self):
+        findings = self.sample()
+        findings[0]["host_os_fingerprint"] = {
+            "status": "accepted_high_confidence",
+            "platform_family": "linux",
+            "nmap_name": "Linux 2.6.9 - 2.6.33 <test>",
+            "accuracy": 100,
+        }
+        html = render_html_report(findings)
+        self.assertIn("Host OS fingerprint", html)
+        self.assertIn("Linux 2.6.9 - 2.6.33 &lt;test&gt; (100%)", html)
+        self.assertNotIn("Linux 2.6.9 - 2.6.33 <test>", html)
+
     def test_report_renders_risk_and_remediation_guidance(self):
         findings = self.sample()
         findings[0]["risk_assessment"] = {
@@ -64,6 +77,98 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Harden the service", html)
         self.assertIn("Restrict access to approved networks.", html)
         self.assertIn("Re-scan from the approved test network.", html)
+
+    def test_report_renders_explicit_exploit_metadata_values(self):
+        findings = [{
+            "host": "127.0.0.1", "port": 22,
+            "service": {"name": "ssh"},
+            "searchsploit_assessment": [{
+                "id": "777", "title": "Example", "platform": "Linux",
+                "assessment": {"relevance": "product_match_version_unconfirmed", "confidence": "low"},
+            }],
+            "exploit_intelligence": [{
+                "reference": {"id": "777", "title": "Example"},
+                "applicability_evidence": {
+                    "requirements_assessment": "documented_in_local_metadata",
+                    "documented_requirements": {
+                        "required_privileges": {"value": "root"}
+                    },
+                    "architecture_assessment": "target_architecture_documented_in_local_metadata",
+                    "target_architecture": {"value": "x86_64"},
+                },
+            }],
+        }]
+        html = render_html_report(findings, target="127.0.0.1")
+        self.assertIn("required_privileges: root", html)
+        self.assertIn("x86_64", html)
+
+    def test_report_renders_normalized_documented_requirements(self):
+        findings = [{
+            "host": "127.0.0.1", "port": 22,
+            "service": {"name": "ssh"},
+            "searchsploit_assessment": [{"id": "779", "title": "Example"}],
+            "exploit_intelligence": [{
+                "reference": {"id": "779"},
+                "applicability_evidence": {
+                    "requirements_assessment": "documented_in_local_metadata",
+                    "normalized_requirements": {
+                        "authentication_required": {"status": "yes", "raw_value": "yes"},
+                        "required_privileges": {"level": "elevated", "raw_value": "root"},
+                        "user_interaction": {"status": "unknown", "raw_value": "maybe"},
+                    },
+                },
+            }],
+        }]
+        html = render_html_report(findings)
+        self.assertIn("authentication_required=yes", html)
+        self.assertIn("required_privileges=elevated", html)
+        self.assertNotIn("user_interaction=unknown", html)
+
+    def test_report_renders_platform_compatibility_column(self):
+        findings = self.sample()
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "123", "title": "Example exploit", "platform": "windows",
+            "assessment": {"relevance": "product_match_version_unconfirmed", "confidence": "low"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "123"},
+            "platform_compatibility": {"status": "platform_mismatch_candidate"},
+            "applicability_evidence": {
+                "requirements_assessment": "unknown_not_inferred_from_exploit_title",
+                "architecture_assessment": "unknown_not_inferred_from_platform_label",
+            },
+            "triage": {"status": "manual_cve_correlation_required"},
+            "cve_correlation": {"status": "no_explicit_cve_link"},
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Platform compatibility", html)
+        self.assertIn("platform_mismatch_candidate", html)
+        self.assertIn("Requirements / architecture", html)
+        self.assertIn("unknown_not_inferred_from_exploit_title", html)
+
+    def test_report_shows_contextual_cve_constraints_and_exploit_triage(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["applicability"] = {
+            "status": "candidate_unverified", "confidence": "low",
+            "cpe_version_status": "version_match",
+            "contextual_constraint": {
+                "kind": "build_provenance",
+                "condition": "Verify package build provenance before confirming impact.",
+            },
+        }
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "12345"},
+            "triage": {"status": "cve_candidate_unverified"},
+            "cve_correlation": {
+                "status": "explicit_cve_match_applicability_unverified",
+                "matched_scanner_cve_ids": ["CVE-2099-0001"],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("build_provenance", html)
+        self.assertIn("Verify package build provenance", html)
+        self.assertIn("cve_candidate_unverified", html)
+        self.assertIn("explicit_cve_match_applicability_unverified", html)
 
     def test_untrusted_values_are_escaped(self):
         html = render_html_report(self.sample())
@@ -119,6 +224,63 @@ class HTMLReportTests(unittest.TestCase):
             written = write_html_report(self.sample(), path, target="127.0.0.1")
             self.assertTrue(written.exists())
             self.assertIn("Network Scan Report", written.read_text(encoding="utf-8"))
+
+
+    def test_report_renders_explicit_cve_correlation_and_related_references(self):
+        findings = self.sample()
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "100", "title": "Example CVE-2099-0001", "platform": "Linux",
+            "assessment": {"relevance": "product_match_version_unconfirmed"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "100"},
+            "triage": {"status": "manual_review_required", "applicability_confidence": "low",
+                       "exploitability_confidence": "unknown"},
+            "cve_correlation": {
+                "status": "explicit_title_and_scanner_match",
+                "matched_scanner_cve_ids": ["CVE-2099-0001"],
+                "link_confidence": "high_for_identifier_link_only",
+                "related_exploit_db_ids": ["200", "300"],
+                "duplicate_observations": [{"title": "alternate title"}],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Explicit-ID link confidence: high_for_identifier_link_only", html)
+        self.assertIn("Related EDB references: 200, 300", html)
+        self.assertIn("Duplicate search observations: 1", html)
+
+    def test_report_renders_confidence_reasons_and_evidence_gaps(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["applicability"].update({
+            "applicability_confidence": "medium",
+            "exploitability_confidence": "unknown",
+            "evidence_sources": ["NVD CPE data", "Nmap identification"],
+            "confidence_reasons": ["Exact CPE version matched."],
+            "evidence_gaps": ["Vendor backport status is unknown."],
+        })
+        findings[0]["searchsploit_assessment"] = [{
+            "id": "321", "title": "Example exploit", "platform": "Linux",
+            "assessment": {"relevance": "product_and_version_match", "confidence": "low"},
+        }]
+        findings[0]["exploit_intelligence"] = [{
+            "reference": {"id": "321"},
+            "triage": {
+                "status": "manual_review_required",
+                "applicability_confidence": "low",
+                "exploitability_confidence": "unknown",
+                "evidence_sources": ["Local Exploit-DB metadata"],
+                "confidence_reasons": ["Title match is not target validation."],
+                "evidence_gaps": ["Build provenance is unknown."],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Applicability confidence: medium; exploitability: unknown", html)
+        self.assertIn("NVD CPE data; Nmap identification", html)
+        self.assertIn("Local Exploit-DB metadata", html)
+        self.assertIn("Exact CPE version matched.", html)
+        self.assertIn("Vendor backport status is unknown.", html)
+        self.assertIn("Title match is not target validation.", html)
+        self.assertIn("Build provenance is unknown.", html)
 
 
 if __name__ == "__main__":

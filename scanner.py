@@ -39,6 +39,7 @@ from risk import assess_cves, assess_service_risk
 
 from assessment import (
     assess_cve_applicability,
+    apply_contextual_cve_constraints,
     build_report_entry,
     classify_exploit,
     cpe22_to_cpe23,
@@ -57,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.8"
-SCANNER_VERSION = "0.9.0"
+REPORT_SCHEMA_VERSION = "1.15"
+SCANNER_VERSION = "0.10.6"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -255,7 +256,13 @@ def _cvss_of(cve):
 def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
     """يبني CPE candidates من بيانات البورت ويستعلم NVD ويرجّع (cves, cpes_tested)"""
     bases = []  # (ptype, vendor:product, source)
-    for uri in port_data.get("cpe") or []:
+    raw_cpes = port_data.get("cpe") or []
+    # python-nmap may return one CPE as a string rather than a list.
+    if isinstance(raw_cpes, str):
+        raw_cpes = [raw_cpes]
+    elif not isinstance(raw_cpes, (list, tuple, set)):
+        raw_cpes = []
+    for uri in raw_cpes:
         cpe23 = _cpe22_to_cpe23(uri)
         if cpe23:
             parts = cpe23.split(":")
@@ -376,7 +383,9 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
             ))
         matched = next((a for a in assessments if a.get("status") == "version_match"), None)
         if matched:
-            item["applicability"] = matched
+            item["applicability"] = apply_contextual_cve_constraints(
+                item.get("id"), matched, item.get("summary", "")
+            )
         elif str(item.get("source", "")).startswith("NVD keyword search"):
             item["applicability"] = {
                 "status": "candidate_unverified",
@@ -385,7 +394,9 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
                 "limitations": ["This result came from keyword search, not a validated vulnerable CPE/version match.", "Check the vendor advisory and complete NVD version ranges manually."],
             }
         elif assessments:
-            item["applicability"] = assessments[0]
+            item["applicability"] = apply_contextual_cve_constraints(
+                item.get("id"), assessments[0], item.get("summary", "")
+            )
         else:
             item["applicability"] = {
                 "status": "candidate_unverified",
@@ -405,6 +416,116 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
         ),
     )[:MAX_CVE_RESULTS]
     return cves, tried
+
+
+EXPLOITDB_EXPLOITS_ROOT = "/usr/share/exploitdb/exploits"
+EXPLOIT_HEADER_FIELDS = {
+    "target architecture": "target_architecture",
+    "target arch": "target_architecture",
+    "architecture": "architecture",
+    "arch": "architecture",
+    "payload architecture": "payload_architecture",
+    "required privileges": "required_privileges",
+    "privileges required": "required_privileges",
+    "authentication required": "authentication_required",
+    "authentication": "authentication",
+    "user interaction": "user_interaction",
+    "requirements": "requirements",
+    "prerequisites": "prerequisites",
+}
+
+
+def normalize_documented_exploit_metadata(metadata):
+    """Normalize only explicit, recognized values; preserve raw evidence unchanged."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+
+    def documented_boolean(field):
+        entry = metadata.get(field)
+        if not isinstance(entry, dict):
+            return {"status": "unknown", "raw_value": None}
+        raw = str(entry.get("value") or "").strip()
+        token = raw.lower()
+        if token in {"yes", "true", "required", "enabled"}:
+            status = "yes"
+        elif token in {"no", "false", "not required", "none", "disabled"}:
+            status = "no"
+        else:
+            status = "unknown"
+        return {"status": status, "raw_value": raw or None}
+
+    def documented_privileges():
+        entry = metadata.get("required_privileges")
+        if not isinstance(entry, dict):
+            return {"level": "unknown", "raw_value": None}
+        raw = str(entry.get("value") or "").strip()
+        token = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+        if token in {"root", "administrator", "admin", "system", "local system"}:
+            level = "elevated"
+        elif token in {"user", "普通用户"}:
+            level = "standard_user"
+        elif token in {"none", "no privileges", "unauthenticated"}:
+            level = "none"
+        else:
+            level = "unknown"
+        return {"level": level, "raw_value": raw or None}
+
+    return {
+        "authentication_required": documented_boolean("authentication_required"),
+        "authentication": documented_boolean("authentication"),
+        "user_interaction": documented_boolean("user_interaction"),
+        "required_privileges": documented_privileges(),
+    }
+
+
+def extract_exploit_metadata(path, exploit_root=EXPLOITDB_EXPLOITS_ROOT):
+    """Read only allowlisted key/value comments from a local Exploit-DB file header.
+
+    No exploit source is imported, evaluated, or executed. Paths outside the
+    configured Exploit-DB exploits directory are ignored.
+    """
+    if not path or not exploit_root:
+        return {}
+    try:
+        root = os.path.realpath(exploit_root)
+        candidate = os.path.realpath(path)
+        if os.path.commonpath([root, candidate]) != root or candidate == root:
+            return {}
+        if not os.path.isfile(candidate):
+            return {}
+        metadata = {}
+        with open(candidate, "r", encoding="utf-8", errors="replace") as source:
+            for line_number, line in enumerate(source, 1):
+                if line_number > 80:
+                    break
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Accept only leading comment metadata, never parse source statements.
+                if stripped.startswith("#"):
+                    content = stripped.lstrip("#").strip()
+                elif stripped.startswith("//"):
+                    content = stripped[2:].strip()
+                elif stripped.startswith("*"):
+                    content = stripped[1:].strip()
+                else:
+                    if stripped.startswith("/*") or stripped.startswith("##"):
+                        continue
+                    break
+                match = re.match(r"^([A-Za-z][A-Za-z _-]{1,40})\s*:\s*(.{1,240})$", content)
+                if not match:
+                    continue
+                field = re.sub(r"\s+", " ", match.group(1).strip().lower())
+                key = EXPLOIT_HEADER_FIELDS.get(field)
+                value = match.group(2).strip()
+                if key and value and key not in metadata:
+                    metadata[key] = {
+                        "value": value,
+                        "source": "local_exploitdb_file_header",
+                        "line": line_number,
+                    }
+        return metadata
+    except (OSError, ValueError):
+        return {}
 
 
 def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
@@ -447,12 +568,15 @@ def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
             # Discard titles with no meaningful product-token match instead of filling the report with noise.
             if relevance["relevance"] == "weak_or_unrelated":
                 continue
+            local_metadata = extract_exploit_metadata(row.get("Path") or "")
             out.append({
                 "id": edb,
                 "title": title,
                 "type": row.get("Type") or "",
                 "platform": row.get("Platform") or "",
                 "path": row.get("Path") or "",
+                "local_metadata": local_metadata,
+                "normalized_metadata": normalize_documented_exploit_metadata(local_metadata),
                 "assessment": relevance,
             })
             if len(out) >= limit:
@@ -514,6 +638,56 @@ def normalize_nmap_args(value):
     if any(any(ord(ch) < 32 for ch in token) for token in tokens):
         raise ValueError("--nmap-args cannot contain control characters.")
     return shlex.join(tokens)
+
+
+def build_host_os_fingerprint(os_matches, requested=False, minimum_accuracy=90):
+    """Preserve raw Nmap OS evidence while only accepting high-confidence family labels."""
+    if not isinstance(os_matches, (list, tuple)) or not os_matches:
+        return {
+            "status": "no_match" if requested else "not_requested",
+            "platform_family": None,
+            "nmap_name": None,
+            "accuracy": None,
+            "minimum_accuracy": minimum_accuracy,
+            "source": "Nmap OS detection",
+        }
+    match = os_matches[0] if isinstance(os_matches[0], dict) else {}
+    try:
+        accuracy = int(match.get("accuracy"))
+    except (TypeError, ValueError):
+        accuracy = None
+    platform = infer_target_platform(os_matches, minimum_accuracy=minimum_accuracy)
+    return {
+        "status": "accepted_high_confidence" if platform else "unconfirmed_low_confidence_or_unknown_family",
+        "platform_family": platform,
+        "nmap_name": str(match.get("name") or "")[:200] or None,
+        "accuracy": accuracy,
+        "minimum_accuracy": minimum_accuracy,
+        "source": "Nmap OS detection",
+    }
+
+
+def infer_target_platform(os_matches, minimum_accuracy=90):
+    """Infer a broad OS family only from a high-confidence Nmap OS match."""
+    if not isinstance(os_matches, (list, tuple)) or not os_matches:
+        return None
+    match = os_matches[0] if isinstance(os_matches[0], dict) else {}
+    try:
+        accuracy = int(match.get("accuracy"))
+    except (TypeError, ValueError):
+        return None
+    if accuracy < minimum_accuracy:
+        return None
+    os_name = str(match.get("name") or "").lower()
+    if any(token in os_name for token in ("windows", "microsoft")):
+        return "windows"
+    if "linux" in os_name:
+        return "linux"
+    if any(token in os_name for token in ("freebsd", "openbsd", "netbsd", "solaris", "unix")):
+        return "unix"
+    if any(token in os_name for token in ("mac os", "macos", "darwin")):
+        return "macos"
+    return None
 
 
 def scanned_hosts(scanner):
@@ -599,6 +773,8 @@ def parse_args(argv=None):
     parser.add_argument("--nvd-api-key", default=None,
                         help="NVD API Key (أو متغير البيئة NVD_API_KEY) - بيرفع الحد لـ 50 طلب/30 ثانية")
     parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
+    parser.add_argument("--os-detection", action="store_true",
+                        help="فعّل Nmap OS detection (-O)؛ قد يحتاج صلاحيات root/raw sockets")
     parser.add_argument("--results-per-page", type=int, default=10,
                         help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
     parser.add_argument("--http-probe", action="store_true",
@@ -622,6 +798,11 @@ def parse_args(argv=None):
         args.target = validate_target(args.target)
         args.ports = validate_ports(args.ports)
         args.nmap_args = normalize_nmap_args(args.nmap_args)
+        if args.os_detection:
+            nmap_tokens = shlex.split(args.nmap_args)
+            if "-O" not in nmap_tokens and "--osscan-guess" not in nmap_tokens:
+                nmap_tokens.append("-O")
+            args.nmap_args = shlex.join(nmap_tokens)
         if not 1 <= args.results_per_page <= 2000:
             raise ValueError("--results-per-page must be between 1 and 2000.")
         if args.output is not None and not args.output.strip():
@@ -779,7 +960,19 @@ def main():
                 else:
                     print("  مفيش exploits اتلقت محلياً")
 
-            exploit_intelligence = build_exploit_intelligence(exploits, cves)
+            # Finalize NVD applicability before correlating exploit references with CVEs.
+            cves = assess_cves(cves)
+
+            # Use only Nmap OS-match evidence when present; never infer OS from a service banner.
+            os_matches = scanner[host].get("osmatch", []) if hasattr(scanner[host], "get") else []
+            os_fingerprint = build_host_os_fingerprint(
+                os_matches,
+                requested=bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
+            )
+            target_platform = os_fingerprint["platform_family"]
+            exploit_intelligence = build_exploit_intelligence(
+                exploits, cves, target_platform=target_platform
+            )
             if exploit_intelligence:
                 print(f"  Exploit intelligence: {len(exploit_intelligence)} مرجع مع إرشادات تحقق آمنة")
 
@@ -793,7 +986,6 @@ def main():
                 print(f"  Web intelligence: {web_intelligence.get('status')}")
 
             # Keep technical risk, operator-supplied asset context, and remediation separate.
-            cves = assess_cves(cves)
             entry = build_report_entry(
                 host=host,
                 port=port,
@@ -809,6 +1001,7 @@ def main():
                 web_intelligence=web_intelligence,
                 network_exposure=assess_network_exposure(port, service, product),
                 exploit_intelligence=exploit_intelligence,
+                host_os_fingerprint=os_fingerprint,
             )
             technical_risk = assess_service_risk(cves, exploits)
             asset_context = assess_asset_context(
@@ -840,6 +1033,7 @@ def main():
         "resolved_hosts": hosts,
         "ports": args.ports,
         "nmap_arguments": args.nmap_args,
+        "os_detection_requested": bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
         "started_at_utc": started_at.isoformat(timespec="seconds"),
         "completed_at_utc": completed_at.isoformat(timespec="seconds"),
         "duration_seconds": round(time.monotonic() - started_monotonic, 3),
