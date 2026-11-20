@@ -78,6 +78,30 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Restrict access to approved networks.", html)
         self.assertIn("Re-scan from the approved test network.", html)
 
+    def test_report_renders_explicit_exploit_metadata_values(self):
+        findings = [{
+            "host": "127.0.0.1", "port": 22,
+            "service": {"name": "ssh"},
+            "searchsploit_assessment": [{
+                "id": "777", "title": "Example", "platform": "Linux",
+                "assessment": {"relevance": "product_match_version_unconfirmed", "confidence": "low"},
+            }],
+            "exploit_intelligence": [{
+                "reference": {"id": "777", "title": "Example"},
+                "applicability_evidence": {
+                    "requirements_assessment": "documented_in_local_metadata",
+                    "documented_requirements": {
+                        "required_privileges": {"value": "root"}
+                    },
+                    "architecture_assessment": "target_architecture_documented_in_local_metadata",
+                    "target_architecture": {"value": "x86_64"},
+                },
+            }],
+        }]
+        html = render_html_report(findings, target="127.0.0.1")
+        self.assertIn("required_privileges: root", html)
+        self.assertIn("x86_64", html)
+
     def test_report_renders_platform_compatibility_column(self):
         findings = self.sample()
         findings[0]["searchsploit_assessment"] = [{

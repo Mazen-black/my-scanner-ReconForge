@@ -215,6 +215,57 @@ class WebIntelligenceProbeTests(unittest.TestCase):
 
 
 class SearchsploitLookupTests(unittest.TestCase):
+    def test_extracts_only_allowlisted_metadata_from_local_header(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            root.mkdir()
+            source = root / "sample.py"
+            source.write_text(
+                "# Exploit Title: Example\n"
+                "# Target Architecture: x86_64\n"
+                "# Required Privileges: root\n"
+                "# Authentication Required: no\n"
+                "# Notes: ignored\n"
+                "#!/usr/bin/python3\n"
+                "print('not metadata')\n",
+                encoding="utf-8",
+            )
+            result = scanner.extract_exploit_metadata(str(source), str(root))
+            self.assertEqual(result["target_architecture"]["value"], "x86_64")
+            self.assertEqual(result["required_privileges"]["value"], "root")
+            self.assertEqual(result["authentication_required"]["value"], "no")
+            self.assertNotIn("notes", result)
+
+    def test_rejects_paths_outside_exploitdb_root(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            outside = Path(temp) / "outside.py"
+            root.mkdir()
+            outside.write_text("# Target Architecture: x86\n", encoding="utf-8")
+            self.assertEqual(scanner.extract_exploit_metadata(str(outside), str(root)), {})
+
+    def test_stops_at_first_source_statement(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            root.mkdir()
+            source = root / "sample.py"
+            source.write_text(
+                "# Exploit Title: Example\n"
+                "# Target Architecture: x86\n"
+                "import os\n"
+                "# Required Privileges: root\n",
+                encoding="utf-8",
+            )
+            result = scanner.extract_exploit_metadata(str(source), str(root))
+            self.assertIn("target_architecture", result)
+            self.assertNotIn("required_privileges", result)
+
     @patch("scanner.subprocess.run")
     @patch("scanner.shutil.which", return_value="/usr/bin/searchsploit")
     def test_missing_product_skips_searchsploit_command(self, mock_which, mock_run):

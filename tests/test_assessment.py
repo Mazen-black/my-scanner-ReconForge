@@ -323,7 +323,7 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(result["triage"]["cve_status"], "manual_cve_correlation_required")
         self.assertEqual(
             result["applicability_evidence"]["requirements_assessment"],
-            "unknown_not_inferred_from_exploit_title",
+            "unknown_not_documented_in_local_metadata",
         )
 
     def test_different_version_in_exploit_title_is_not_treated_as_applicable(self):
@@ -341,6 +341,33 @@ class ExploitIntelligenceTests(unittest.TestCase):
             target_platform="linux",
         )[0]
         self.assertEqual(result["triage"]["status"], "different_version_candidate")
+
+    def test_exploit_intelligence_uses_explicit_local_metadata_only(self):
+        result = build_exploit_intelligence(
+            [{
+                "id": "777", "title": "Example Product 1.0",
+                "local_metadata": {
+                    "target_architecture": {"value": "x86_64", "source": "local_exploitdb_file_header", "line": 2},
+                    "required_privileges": {"value": "root", "source": "local_exploitdb_file_header", "line": 3},
+                },
+                "assessment": {"relevance": "product_version_title_match_manual_validation"},
+            }], [], target_platform="linux"
+        )[0]
+        evidence = result["applicability_evidence"]
+        self.assertEqual(evidence["architecture_assessment"], "target_architecture_documented_in_local_metadata")
+        self.assertEqual(evidence["target_architecture"]["value"], "x86_64")
+        self.assertEqual(evidence["requirements_assessment"], "documented_in_local_metadata")
+        self.assertEqual(evidence["documented_requirements"]["required_privileges"]["value"], "root")
+
+    def test_missing_local_metadata_stays_unknown(self):
+        result = build_exploit_intelligence(
+            [{"id": "778", "title": "Example Product", "assessment": {"relevance": "product_match_version_unconfirmed"}}],
+            [], target_platform="linux"
+        )[0]
+        evidence = result["applicability_evidence"]
+        self.assertEqual(evidence["architecture_assessment"], "unknown_not_inferred_from_platform_label")
+        self.assertEqual(evidence["requirements_assessment"], "unknown_not_documented_in_local_metadata")
+        self.assertIsNone(evidence["target_architecture"])
 
     def test_exploit_intelligence_records_platform_compatibility(self):
         result = build_exploit_intelligence(

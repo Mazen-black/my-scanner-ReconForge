@@ -58,8 +58,8 @@ BACKOFF_BASE = 5.0
 MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
-REPORT_SCHEMA_VERSION = "1.11"
-SCANNER_VERSION = "0.10.2"
+REPORT_SCHEMA_VERSION = "1.12"
+SCANNER_VERSION = "0.10.3"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -418,6 +418,74 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page):
     return cves, tried
 
 
+EXPLOITDB_EXPLOITS_ROOT = "/usr/share/exploitdb/exploits"
+EXPLOIT_HEADER_FIELDS = {
+    "target architecture": "target_architecture",
+    "target arch": "target_architecture",
+    "architecture": "architecture",
+    "arch": "architecture",
+    "payload architecture": "payload_architecture",
+    "required privileges": "required_privileges",
+    "privileges required": "required_privileges",
+    "authentication required": "authentication_required",
+    "authentication": "authentication",
+    "user interaction": "user_interaction",
+    "requirements": "requirements",
+    "prerequisites": "prerequisites",
+}
+
+
+def extract_exploit_metadata(path, exploit_root=EXPLOITDB_EXPLOITS_ROOT):
+    """Read only allowlisted key/value comments from a local Exploit-DB file header.
+
+    No exploit source is imported, evaluated, or executed. Paths outside the
+    configured Exploit-DB exploits directory are ignored.
+    """
+    if not path or not exploit_root:
+        return {}
+    try:
+        root = os.path.realpath(exploit_root)
+        candidate = os.path.realpath(path)
+        if os.path.commonpath([root, candidate]) != root or candidate == root:
+            return {}
+        if not os.path.isfile(candidate):
+            return {}
+        metadata = {}
+        with open(candidate, "r", encoding="utf-8", errors="replace") as source:
+            for line_number, line in enumerate(source, 1):
+                if line_number > 80:
+                    break
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Accept only leading comment metadata, never parse source statements.
+                if stripped.startswith("#"):
+                    content = stripped.lstrip("#").strip()
+                elif stripped.startswith("//"):
+                    content = stripped[2:].strip()
+                elif stripped.startswith("*"):
+                    content = stripped[1:].strip()
+                else:
+                    if stripped.startswith("/*") or stripped.startswith("##"):
+                        continue
+                    break
+                match = re.match(r"^([A-Za-z][A-Za-z _-]{1,40})\s*:\s*(.{1,240})$", content)
+                if not match:
+                    continue
+                field = re.sub(r"\s+", " ", match.group(1).strip().lower())
+                key = EXPLOIT_HEADER_FIELDS.get(field)
+                value = match.group(2).strip()
+                if key and value and key not in metadata:
+                    metadata[key] = {
+                        "value": value,
+                        "source": "local_exploitdb_file_header",
+                        "line": line_number,
+                    }
+        return metadata
+    except (OSError, ValueError):
+        return {}
+
+
 def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
     """بحث محلي في Exploit-DB عن طريق searchsploit (بدون Rate limits)"""
     if shutil.which("searchsploit") is None:
@@ -464,6 +532,7 @@ def searchsploit_lookup(product, version, limit=MAX_EXPLOIT_RESULTS):
                 "type": row.get("Type") or "",
                 "platform": row.get("Platform") or "",
                 "path": row.get("Path") or "",
+                "local_metadata": extract_exploit_metadata(row.get("Path") or ""),
                 "assessment": relevance,
             })
             if len(out) >= limit:

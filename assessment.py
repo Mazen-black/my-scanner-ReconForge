@@ -737,6 +737,14 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
             triage_status = "cve_not_matched_by_nvd_cpe"
         valid_edb_id = edb_id if re.fullmatch(r"\d{1,8}", edb_id) else None
         source_assessment = (exploit.get("assessment") or {}).copy()
+        local_metadata = exploit.get("local_metadata") or {}
+        target_architecture = local_metadata.get("target_architecture")
+        documented_requirements = {
+            key: local_metadata[key]
+            for key in ("required_privileges", "authentication_required", "authentication",
+                        "user_interaction", "requirements", "prerequisites")
+            if key in local_metadata
+        }
         platform_assessment = assess_exploit_platform(exploit.get("platform"), target_platform)
         relevance = source_assessment.get("relevance", "unassessed")
         if platform_assessment["status"] == "platform_mismatch_candidate":
@@ -765,8 +773,19 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
                 "product_version_relevance": relevance,
                 "title_version_match": bool((source_assessment.get("evidence") or {}).get("version_text_match")),
                 "title_version_candidates": (source_assessment.get("evidence") or {}).get("version_candidates_in_title", []),
-                "requirements_assessment": "unknown_not_inferred_from_exploit_title",
-                "architecture_assessment": "unknown_not_inferred_from_platform_label",
+                "requirements_assessment": (
+                    "documented_in_local_metadata" if documented_requirements
+                    else "unknown_not_documented_in_local_metadata"
+                ),
+                "documented_requirements": documented_requirements,
+                "architecture_assessment": (
+                    "target_architecture_documented_in_local_metadata" if target_architecture
+                    else "unknown_not_inferred_from_platform_label"
+                ),
+                "target_architecture": target_architecture,
+                "architecture_metadata": local_metadata.get("architecture"),
+                "payload_architecture": local_metadata.get("payload_architecture"),
+                "metadata_source": "local_exploitdb_file_header" if local_metadata else None,
             },
             "cve_correlation": {
                 "explicit_cve_ids_in_title": explicit_ids,
@@ -791,6 +810,7 @@ def build_exploit_intelligence(exploits, cves, target_platform=None):
             "limitations": [
                 "An Exploit-DB reference or title match does not prove target vulnerability or exploit reliability.",
                 "Platform compatibility is a coarse metadata comparison, not proof of OS, architecture, or exploit compatibility.",
+                "Requirements and architecture are shown only when explicitly documented in the local Exploit-DB file header; missing metadata remains unknown.",
                 "CVE correlation is based only on explicit CVE identifiers in the exploit title.",
                 "NVD CPE applicability is kept separate from exploit applicability and may omit build-specific conditions.",
                 "No exploit payload was downloaded, launched, or executed by ReconForge.",

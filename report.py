@@ -111,8 +111,19 @@ def _exploit_rows(exploits, intelligence_by_id=None):
         cve_state = correlation.get("status", "not_correlated")
         platform_state = (enriched.get("platform_compatibility") or {}).get("status", "unknown_target_platform")
         evidence = enriched.get("applicability_evidence") or {}
-        requirements_state = evidence.get("requirements_assessment", "unknown_not_inferred_from_exploit_title")
+        requirements_state = evidence.get("requirements_assessment", "unknown_not_documented_in_local_metadata")
+        documented_requirements = evidence.get("documented_requirements") or {}
+        requirement_values = [
+            f"{key}: {value.get('value')}"
+            for key, value in documented_requirements.items()
+            if isinstance(value, dict) and value.get("value")
+        ]
+        if requirement_values:
+            requirements_state += " (" + "; ".join(requirement_values) + ")"
         architecture_state = evidence.get("architecture_assessment", "unknown_not_inferred_from_platform_label")
+        target_architecture = evidence.get("target_architecture")
+        if isinstance(target_architecture, dict) and target_architecture.get("value"):
+            architecture_state += f" ({target_architecture['value']})"
         rows.append(
             '<tr>'
             f'<td>{_e(exploit.get("id"))}</td>'
