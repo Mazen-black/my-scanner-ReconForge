@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.9 - 2026-11-25
+
+- Require complete CPE 2.3 identifiers before evaluating NVD applicability.
+- Keep constrained update, edition, language, target OS, hardware, and other CPE attributes unverified when the service scan has not identified them.
+- Stop stripping vendor/distribution suffixes from detected versions because they may encode downstream security backports.
+- Add regression tests for malformed CPEs, constrained CPE attributes, and suffixed versions.
+
 ## 0.10.8 - 2026-11-25
 
 - Preserve one Nmap OS fingerprint record per resolved host in report metadata, including hosts with no open TCP services.

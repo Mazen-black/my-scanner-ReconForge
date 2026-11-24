@@ -38,6 +38,30 @@ class CVEApplicabilityTests(unittest.TestCase):
         self.assertEqual(result["status"], "version_match")
         self.assertEqual(result["evidence"][0]["reason"], "exact_version")
 
+    def test_vendor_version_suffix_is_not_stripped_for_comparison(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57-ubuntu1")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("not safely comparable" in item for item in result["evidence_gaps"]))
+
+    def test_constrained_cpe_target_os_remains_unverified(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:windows:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("target_sw=windows" in item for item in result["evidence_gaps"]))
+
+    def test_constrained_cpe_update_remains_unverified(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:sp1:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("update=sp1" in item for item in result["evidence_gaps"]))
+
+    def test_malformed_short_cpe_is_not_evaluated(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("incomplete or malformed" in item for item in result["evidence_gaps"]))
+
     def test_contextual_build_provenance_downgrades_broad_cpe_match(self):
         base = {"status": "version_match", "confidence": "medium", "evidence": [{"reason": "exact_version"}]}
         result = apply_contextual_cve_constraints("CVE-2011-2523", base)

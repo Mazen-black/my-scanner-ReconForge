@@ -47,7 +47,8 @@ def _version_tuple(value):
     value = (value or "").strip()
     if not value or value == "*":
         return None
-    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)(?:[-+_].*)?", value, re.I)
+    # Vendor/distribution suffixes may encode security backports; do not discard them.
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)", value, re.I)
     if not match:
         return None
     try:
@@ -138,9 +139,9 @@ def _evaluate_config_node(node, vendor, product, detected_version, part):
             continue
         criteria = match.get("criteria") or match.get("cpe23Uri") or ""
         fields = criteria.split(":")
-        if len(fields) < 6 or fields[0:2] != ["cpe", "2.3"]:
+        if len(fields) != 13 or fields[0:2] != ["cpe", "2.3"]:
             states.append(None)
-            uncertain.append("CPE criteria is missing or malformed")
+            uncertain.append("CPE criteria is incomplete or malformed; expected all 11 CPE 2.3 attributes")
             continue
         identity = (fields[2].lower(), fields[3].lower(), fields[4].lower())
         if identity != expected:
@@ -149,6 +150,21 @@ def _evaluate_config_node(node, vendor, product, detected_version, part):
             uncertain.append(f"Required environment CPE not assessed: {criteria}")
             continue
         state, item_evidence, reason = _version_match(match, detected_version)
+        if state is True:
+            # Service fingerprinting does not identify all CPE 2.3 attributes.
+            # A constrained update/edition/OS/hardware value must remain unknown.
+            constrained = [
+                (name, value)
+                for name, value in zip(
+                    ("update", "edition", "language", "sw_edition", "target_sw", "target_hw", "other"),
+                    fields[6:13],
+                )
+                if value not in ("*", "")
+            ]
+            if constrained:
+                details = ", ".join(f"{name}={value}" for name, value in constrained)
+                state, item_evidence = None, None
+                reason = f"{criteria}: constrained CPE attributes were not identified by the service scan ({details})"
         states.append(state)
         if item_evidence:
             evidence.append(item_evidence)

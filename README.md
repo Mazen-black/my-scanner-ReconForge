@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.8 · Report schema 1.15
+> **Current version:** Scanner 0.10.9 · Report schema 1.15
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -196,7 +196,7 @@ Reports may contain target addresses, port/service information, software version
 
 - Service identification depends on Nmap's detection and the information exposed by the target.
 - NVD search results are candidates, not confirmed vulnerabilities.
-- Version comparison is not guaranteed to model every vendor-specific version scheme.
+- Version comparison is not guaranteed to model every vendor-specific version scheme. Ambiguous distro/build suffixes are intentionally left unverified because they may encode security backports; constrained CPE attributes not identified by the service scan are also left unverified.
 - The scanner has a conservative evaluator for common NVD configuration-tree logic, but it only knows the detected service inventory. Multi-component requirements may therefore remain `candidate_unverified` until the full host inventory is available.
 - Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Exploit intelligence correlates CVEs only when an explicit CVE identifier appears in the title; absence of a link does not mean the exploit is unrelated. EDB references are not proof of applicability, and ReconForge does not download or execute exploit code.
 - The HTTP assessment checks only a single HEAD response from `/`; it does not crawl pages, inspect JavaScript, test forms, or validate application behavior.
