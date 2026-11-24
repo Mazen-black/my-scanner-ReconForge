@@ -34,6 +34,20 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
 
+## Project architecture
+
+The installable `src/reconforge/` package separates the scanner workflow into focused modules:
+
+- `scanner.py` coordinates Nmap, assessment, reporting, and command-line execution.
+- `targeting.py` validates targets and ports and interprets host-level Nmap OS evidence.
+- `nvd.py` handles CPE query construction, NVD requests, rate limiting, and CVE applicability candidates.
+- `exploitdb.py` performs local SearchSploit lookups and reads only allowlisted metadata from local exploit-file headers; it never executes exploit code.
+- `web_probe.py` contains bounded HTTP header, cookie, and same-origin web-intelligence probes.
+- `assessment.py`, `risk.py`, `asset_context.py`, and `remediation.py` handle evidence analysis, prioritization, context, and guidance.
+- `report.py` writes the HTML dashboard and renders existing JSON reports.
+
+Root-level Python scripts remain compatibility entry points for existing workflows.
+
 ## How it works
 
 1. Nmap identifies open ports and service/version details on the specified target.

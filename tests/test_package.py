@@ -22,6 +22,14 @@ class PackageTests(unittest.TestCase):
                 package_module = importlib.import_module(f"reconforge.{module_name}")
                 self.assertIs(legacy_module, package_module)
 
+    def test_extracted_modules_are_importable(self):
+        from reconforge import exploitdb, nvd, targeting, web_probe
+
+        self.assertTrue(callable(exploitdb.searchsploit_lookup))
+        self.assertTrue(callable(nvd.check_cve_nvd))
+        self.assertTrue(callable(targeting.validate_target))
+        self.assertTrue(callable(web_probe.probe_http_metadata))
+
     def test_console_entry_points_are_importable(self):
         from reconforge.report import main as report_main
         from reconforge.scanner import main as scanner_main
