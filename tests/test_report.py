@@ -47,8 +47,37 @@ class HTMLReportTests(unittest.TestCase):
         }
         html = render_html_report(findings)
         self.assertIn("Host OS fingerprint", html)
+        self.assertIn("Host OS Fingerprint", html)
         self.assertIn("Linux 2.6.9 - 2.6.33 &lt;test&gt; (100%)", html)
+        self.assertIn("Linux 2.6.9 - 2.6.33 &lt;test&gt;", html)
+        self.assertIn("90%", html)
+        self.assertIn("Hosts with accepted OS match", html)
         self.assertNotIn("Linux 2.6.9 - 2.6.33 <test>", html)
+
+    def test_os_fingerprint_table_deduplicates_hosts_and_keeps_unknowns(self):
+        findings = self.sample()
+        findings[0]["host_os_fingerprint"] = {
+            "status": "accepted_high_confidence", "platform_family": "linux",
+            "nmap_name": "Linux Server", "accuracy": 98, "minimum_accuracy": 90,
+        }
+        second_service = dict(findings[0])
+        second_service["port"] = 8080
+        second_service["host_os_fingerprint"] = dict(findings[0]["host_os_fingerprint"])
+        unknown_host = dict(findings[0])
+        unknown_host["host"] = "192.0.2.20"
+        unknown_host["host_os_fingerprint"] = {
+            "status": "no_match", "platform_family": None, "nmap_name": None,
+            "accuracy": None, "minimum_accuracy": 90,
+        }
+        html = render_html_report([findings[0], second_service, unknown_host])
+        self.assertEqual(html.count("<td>127.0.0.1</td><td>Linux Server</td>"), 1)
+        self.assertIn("<td>192.0.2.20</td><td>No OS match returned</td>", html)
+        self.assertIn("accepted_high_confidence", html)
+        self.assertIn("no_match", html)
+
+    def test_os_fingerprint_section_has_placeholder_when_not_recorded(self):
+        html = render_html_report(self.sample())
+        self.assertIn("No host OS fingerprint data recorded.", html)
 
     def test_report_renders_risk_and_remediation_guidance(self):
         findings = self.sample()

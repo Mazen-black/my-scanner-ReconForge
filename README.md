@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.6 · Report schema 1.15
+> **Current version:** Scanner 0.10.7 · Report schema 1.15
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -22,7 +22,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Optionally searches the local Exploit-DB database with `searchsploit`.
 - Enriches exploit references with validated Exploit-DB links, explicit CVE-title correlation, conservative platform compatibility, product/version title relevance, and safe manual validation guidance; exploit code is never executed.
 - Reads only allowlisted metadata comments from the first 80 lines of local Exploit-DB files to report explicitly documented target architecture, authentication, privilege, and prerequisite hints; strict normalization maps only known values and preserves unrecognized wording as unknown raw evidence.
-- Optional Nmap OS fingerprinting (--os-detection) adds -O explicitly; OS-family compatibility remains a coarse research hint, not proof of exploitability.
+- Optional Nmap OS fingerprinting (`--os-detection`) adds `-O` explicitly; the HTML dashboard summarizes one OS match per host, including Nmap's match accuracy, the acceptance threshold, broad platform family, and unknown/no-match states. OS-family compatibility remains a coarse research hint, not proof of exploitability.
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
 - Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
@@ -181,6 +181,7 @@ Reports use a versioned JSON envelope:
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
 - `summary`: host, open-service, CVE-candidate, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
+- `host_os_fingerprint`: per-service copy of the host-level Nmap OS match, with status, broad platform family, match name, accuracy, minimum acceptance threshold, and source. The HTML report deduplicates this into one row per host and never treats Nmap accuracy as a probability.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 - `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 - `web_intelligence` stores CMS/library hints and summary counts from the optional bounded HTML, robots, and sitemap inspection, or `not_requested` when disabled.

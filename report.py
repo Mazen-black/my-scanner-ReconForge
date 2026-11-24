@@ -192,6 +192,53 @@ def _remediation_sections(results):
             )
     return "".join(sections) or '<p class="muted">No remediation guidance generated. Confirm service identification and CVE metadata first.</p>'
 
+def _os_fingerprint_rows(results):
+    """Render one conservative OS-fingerprint row per host, not per service."""
+    fingerprints = {}
+    for item in results or []:
+        host = str(item.get("host") or "Unknown")
+        fingerprint = item.get("host_os_fingerprint")
+        if not isinstance(fingerprint, dict):
+            continue
+        previous = fingerprints.get(host)
+        # Prefer an accepted fingerprint if duplicate service rows disagree.
+        if previous is None or (
+            previous.get("status") != "accepted_high_confidence"
+            and fingerprint.get("status") == "accepted_high_confidence"
+        ):
+            fingerprints[host] = fingerprint
+
+    rows = []
+    for host, fingerprint in sorted(fingerprints.items()):
+        accuracy = fingerprint.get("accuracy")
+        accuracy_text = f"{accuracy}%" if isinstance(accuracy, (int, float)) else "Unknown"
+        threshold = fingerprint.get("minimum_accuracy")
+        threshold_text = f"{threshold}%" if isinstance(threshold, (int, float)) else "Not specified"
+        status = fingerprint.get("status") or "unknown"
+        family = fingerprint.get("platform_family") or "Unknown"
+        nmap_name = fingerprint.get("nmap_name") or "No OS match returned"
+        rows.append(
+            '<tr>'
+            f'<td>{_e(host)}</td>'
+            f'<td>{_e(nmap_name)}</td>'
+            f'<td>{_e(family)}</td>'
+            f'<td class="numeric">{_e(accuracy_text)}</td>'
+            f'<td class="numeric">{_e(threshold_text)}</td>'
+            f'<td>{_e(status)}</td>'
+            '</tr>'
+        )
+    return "".join(rows) or '<tr><td colspan="6" class="empty">No host OS fingerprint data recorded.</td></tr>'
+
+
+def _accepted_os_host_count(results):
+    hosts = set()
+    for item in results or []:
+        fingerprint = item.get("host_os_fingerprint") or {}
+        if fingerprint.get("status") == "accepted_high_confidence" and fingerprint.get("platform_family"):
+            hosts.add(str(item.get("host") or "Unknown"))
+    return len(hosts)
+
+
 def render_html_report(results, target="Unknown", generated_at=None):
     """Return a complete standalone HTML report. All source data is escaped."""
     results = results if isinstance(results, list) else []
@@ -287,10 +334,15 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">High / Critical review priority</div><div class="metric">{high_priority}</div></div>
 <div class="card"><div class="muted">Unverified CVE candidates</div><div class="metric">{unverified_candidates}</div></div>
 <div class="card"><div class="muted">Exploit references</div><div class="metric">{len(exploits)}</div></div>
+<div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results)}</div></div>
 </div>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Host OS fingerprint</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>
+<section><h2>Host OS Fingerprint</h2>
+<p class="muted">OS detection is opt-in. A broad platform family is accepted only when Nmap's match accuracy meets the configured threshold (90% by default). Nmap accuracy is a matching score, not a calibrated probability, and does not establish CPU architecture or vulnerability applicability.</p>
+<div class="table-wrap"><table><thead><tr><th>Host</th><th>Nmap OS match</th><th>Platform family</th><th>Match accuracy</th><th>Acceptance threshold</th><th>Status</th></tr></thead>
+<tbody>{_os_fingerprint_rows(results)}</tbody></table></div></section>
 <section><h2>Risk Prioritization</h2><p class="muted">Technical priority uses the highest CVE review-priority score. Contextual priority adjusts it only with explicitly supplied asset criticality and exposure. Unknown context is neutral. Neither score is CVSS or proof of exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Technical priority</th><th>Technical score</th><th>Contextual priority</th><th>Asset / Exposure</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
 <tbody>{_risk_rows(results)}</tbody></table></div></section>

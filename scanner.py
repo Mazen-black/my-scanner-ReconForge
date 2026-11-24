@@ -59,7 +59,7 @@ MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
 REPORT_SCHEMA_VERSION = "1.15"
-SCANNER_VERSION = "0.10.6"
+SCANNER_VERSION = "0.10.7"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
