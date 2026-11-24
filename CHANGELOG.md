@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.10 - 2026-11-25
+
+- Expand GitHub Actions validation across Python 3.10, 3.11, 3.12, and 3.13.
+- Compile the scanner, assessment, reporting, risk, asset-context, and remediation modules in CI before running tests.
+
 ## 0.10.9 - 2026-11-25
 
 - Require complete CPE 2.3 identifiers before evaluating NVD applicability.

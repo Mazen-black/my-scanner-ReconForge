@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.9 · Report schema 1.15
+> **Current version:** Scanner 0.10.10 · Report schema 1.15
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
