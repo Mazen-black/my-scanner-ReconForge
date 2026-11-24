@@ -28,10 +28,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -e .
 
       - name: Compile project modules
-        run: python -m compileall -q scanner.py assessment.py report.py risk.py asset_context.py remediation.py
+        run: python -m compileall -q src/reconforge scanner.py assessment.py report.py risk.py asset_context.py remediation.py
 
       - name: Run test suite
         run: python -m unittest discover -s tests -v

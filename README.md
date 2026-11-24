@@ -54,7 +54,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 - Python 3.10+
 - Nmap installed and available on `PATH`
-- Python packages listed in `requirements.txt`
+- Installable Python package and dependencies declared in `pyproject.toml`
 - Optional: Searchsploit / Exploit-DB installed and available on `PATH`
 - Optional: an NVD API key for a higher API request limit
 
@@ -77,8 +77,10 @@ cd my-scanner-ReconForge
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 ```
+
+Editable installation provides the `reconforge` and `reconforge-report` commands. The root-level `scanner.py` and `report.py` scripts remain available for compatibility.
 
 If you do not use Searchsploit, omit the `exploitdb` system package and run with `--no-exploitdb`.
 
@@ -89,19 +91,19 @@ Only scan systems you own or have explicit permission to assess.
 Basic scan:
 
 ```bash
-python scanner.py --target 192.0.2.10
+reconforge --target 192.0.2.10
 ```
 
 Specify ports and generate both JSON and HTML reports:
 
 ```bash
-python scanner.py --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
+reconforge --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
 
 Enable optional OS fingerprinting when you have authorization and the required privileges:
 
 ```bash
-sudo python scanner.py --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
+sudo reconforge --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
 ```
 
 This option adds Nmap's -O OS-detection probe. It may require root/raw-socket privileges and can still return no reliable match. Without --os-detection, the default scan remains unchanged. ReconForge accepts only the first Nmap OS match at 90% accuracy or higher; lower-confidence or missing matches remain unknown. Broad OS-family matches are not proof of architecture or exploit compatibility.
@@ -109,13 +111,13 @@ This option adds Nmap's -O OS-detection probe. It may require root/raw-socket pr
 Run without NVD requests when offline or when the NVD API is unavailable:
 
 ```bash
-python scanner.py --target 192.0.2.10 --no-nvd --html-output offline-report.html
+reconforge --target 192.0.2.10 --no-nvd --html-output offline-report.html
 ```
 
 Supply asset context only when independently verified:
 
 ```bash
-python scanner.py --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
+reconforge --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
 ```
 
 Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Supported exposure values: `unknown`, `internal`, `internet`. Both default to `unknown`; the scanner does not infer internet reachability from an open port.
@@ -123,7 +125,7 @@ Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Su
 Enable the optional HTTP headers and cookie review (only for recognized web services):
 
 ```bash
-python scanner.py --target 192.0.2.10 --http-probe
+reconforge --target 192.0.2.10 --http-probe
 ```
 
 The HTTP review sends one `HEAD /` request per recognized web service, does not follow redirects, uses short timeouts, and does not disable TLS certificate verification. It records cookie names and security attributes only; cookie values are not saved. Missing security headers are hardening observations, not proof of an exploitable vulnerability.
@@ -131,7 +133,7 @@ The HTTP review sends one `HEAD /` request per recognized web service, does not 
 Enable bounded web technology and site metadata discovery:
 
 ```bash
-python scanner.py --target 192.0.2.10 --web-intel
+reconforge --target 192.0.2.10 --web-intel
 ```
 
 This mode fetches only the root document, `/robots.txt`, and `/sitemap.xml` on the scanned host. The root response is capped at 256 KiB; robots and sitemap responses are capped at 64 KiB each. It does not follow redirects, fetch JavaScript assets, crawl links, or request URLs listed inside robots/sitemap files. CMS and JavaScript-library labels are heuristic hints from meta-generator values and asset URL patterns, not proof of installed versions. Robots directives are not access controls.
@@ -139,14 +141,14 @@ This mode fetches only the root document, `/robots.txt`, and `/sitemap.xml` on t
 Disable the local Exploit-DB search:
 
 ```bash
-python scanner.py --target 192.0.2.10 --no-exploitdb
+reconforge --target 192.0.2.10 --no-exploitdb
 ```
 
 Provide an NVD API key through an environment variable (recommended over putting a key in shell history):
 
 ```bash
 export NVD_API_KEY="YOUR_NVD_API_KEY"
-python scanner.py --target 192.0.2.10
+reconforge --target 192.0.2.10
 ```
 
 You can also pass `--nvd-api-key`, but avoid saving secrets in scripts, screenshots, shell history, or reports. Get an API key from the official [NVD API site](https://nvd.nist.gov/developers/request-an-api-key).
@@ -154,13 +156,13 @@ You can also pass `--nvd-api-key`, but avoid saving secrets in scripts, screensh
 Render an existing JSON report without running another scan (supports current versioned envelopes and legacy list reports):
 
 ```bash
-python report.py report.json --output report.html
+reconforge-report report.json --output report.html
 ```
 
 View all options:
 
 ```bash
-python scanner.py --help
+reconforge --help
 ```
 
 Replace `192.0.2.10` with a lab target or another system you are authorized to scan. The address above is reserved for documentation examples.

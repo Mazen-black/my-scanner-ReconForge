@@ -23,3 +23,8 @@ scan_*.json
 scan_results.json
 report.json
 reports/
+
+# Python packaging artifacts
+build/
+dist/
+*.egg-info/
