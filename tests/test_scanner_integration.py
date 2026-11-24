@@ -43,6 +43,8 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "98"}]), "linux")
         self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "75"}]))
         self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x"}]))
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "101"}]))
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "-1"}]))
         self.assertIsNone(scanner.infer_target_platform([]))
 
     def test_os_fingerprint_report_preserves_match_and_confidence(self):
@@ -53,6 +55,10 @@ class InputValidationTests(unittest.TestCase):
         low = scanner.build_host_os_fingerprint([{"name": "Linux 6.x", "accuracy": "75"}], requested=True)
         self.assertEqual(low["status"], "unconfirmed_low_confidence_or_unknown_family")
         self.assertIsNone(low["platform_family"])
+        invalid = scanner.build_host_os_fingerprint([{"name": "Linux 6.x", "accuracy": "101"}], requested=True)
+        self.assertEqual(invalid["status"], "unconfirmed_low_confidence_or_unknown_family")
+        self.assertIsNone(invalid["accuracy"])
+        self.assertIsNone(invalid["platform_family"])
 
     def test_os_fingerprint_maps_supported_families(self):
         cases = {

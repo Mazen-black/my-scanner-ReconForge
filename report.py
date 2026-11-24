@@ -192,21 +192,28 @@ def _remediation_sections(results):
             )
     return "".join(sections) or '<p class="muted">No remediation guidance generated. Confirm service identification and CVE metadata first.</p>'
 
-def _os_fingerprint_rows(results):
-    """Render one conservative OS-fingerprint row per host, not per service."""
+def _host_os_fingerprints(results, host_os_fingerprints=None):
+    """Merge host-level report metadata with legacy per-service OS evidence."""
     fingerprints = {}
+    for record in host_os_fingerprints or []:
+        if not isinstance(record, dict):
+            continue
+        host = str(record.get("host") or "Unknown")
+        fingerprints[host] = {
+            key: value for key, value in record.items() if key != "host"
+        }
     for item in results or []:
         host = str(item.get("host") or "Unknown")
         fingerprint = item.get("host_os_fingerprint")
-        if not isinstance(fingerprint, dict):
+        if not isinstance(fingerprint, dict) or host in fingerprints:
             continue
-        previous = fingerprints.get(host)
-        # Prefer an accepted fingerprint if duplicate service rows disagree.
-        if previous is None or (
-            previous.get("status") != "accepted_high_confidence"
-            and fingerprint.get("status") == "accepted_high_confidence"
-        ):
-            fingerprints[host] = fingerprint
+        fingerprints[host] = fingerprint
+    return fingerprints
+
+
+def _os_fingerprint_rows(results, host_os_fingerprints=None):
+    """Render one conservative OS-fingerprint row per host, including hosts without open ports."""
+    fingerprints = _host_os_fingerprints(results, host_os_fingerprints)
 
     rows = []
     for host, fingerprint in sorted(fingerprints.items()):
@@ -230,16 +237,16 @@ def _os_fingerprint_rows(results):
     return "".join(rows) or '<tr><td colspan="6" class="empty">No host OS fingerprint data recorded.</td></tr>'
 
 
-def _accepted_os_host_count(results):
-    hosts = set()
-    for item in results or []:
-        fingerprint = item.get("host_os_fingerprint") or {}
-        if fingerprint.get("status") == "accepted_high_confidence" and fingerprint.get("platform_family"):
-            hosts.add(str(item.get("host") or "Unknown"))
-    return len(hosts)
+def _accepted_os_host_count(results, host_os_fingerprints=None):
+    fingerprints = _host_os_fingerprints(results, host_os_fingerprints)
+    return sum(
+        fingerprint.get("status") == "accepted_high_confidence"
+        and bool(fingerprint.get("platform_family"))
+        for fingerprint in fingerprints.values()
+    )
 
 
-def render_html_report(results, target="Unknown", generated_at=None):
+def render_html_report(results, target="Unknown", generated_at=None, host_os_fingerprints=None):
     """Return a complete standalone HTML report. All source data is escaped."""
     results = results if isinstance(results, list) else []
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -334,7 +341,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">High / Critical review priority</div><div class="metric">{high_priority}</div></div>
 <div class="card"><div class="muted">Unverified CVE candidates</div><div class="metric">{unverified_candidates}</div></div>
 <div class="card"><div class="muted">Exploit references</div><div class="metric">{len(exploits)}</div></div>
-<div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results)}</div></div>
+<div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results, host_os_fingerprints)}</div></div>
 </div>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Host OS fingerprint</th><th>State</th></tr></thead>
@@ -342,7 +349,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <section><h2>Host OS Fingerprint</h2>
 <p class="muted">OS detection is opt-in. A broad platform family is accepted only when Nmap's match accuracy meets the configured threshold (90% by default). Nmap accuracy is a matching score, not a calibrated probability, and does not establish CPU architecture or vulnerability applicability.</p>
 <div class="table-wrap"><table><thead><tr><th>Host</th><th>Nmap OS match</th><th>Platform family</th><th>Match accuracy</th><th>Acceptance threshold</th><th>Status</th></tr></thead>
-<tbody>{_os_fingerprint_rows(results)}</tbody></table></div></section>
+<tbody>{_os_fingerprint_rows(results, host_os_fingerprints)}</tbody></table></div></section>
 <section><h2>Risk Prioritization</h2><p class="muted">Technical priority uses the highest CVE review-priority score. Contextual priority adjusts it only with explicitly supplied asset criticality and exposure. Unknown context is neutral. Neither score is CVSS or proof of exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Technical priority</th><th>Technical score</th><th>Contextual priority</th><th>Asset / Exposure</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
 <tbody>{_risk_rows(results)}</tbody></table></div></section>
@@ -359,11 +366,14 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 </main></body></html>"""
 
 
-def write_html_report(results, output_path, target="Unknown"):
+def write_html_report(results, output_path, target="Unknown", host_os_fingerprints=None):
     """Write a UTF-8 standalone HTML report and return its path."""
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_html_report(results, target=target), encoding="utf-8")
+    output.write_text(
+        render_html_report(results, target=target, host_os_fingerprints=host_os_fingerprints),
+        encoding="utf-8",
+    )
     return output
 
 
@@ -382,8 +392,12 @@ def main():
         if not isinstance(metadata, dict):
             parser.error("ReconForge report metadata must be a JSON object.")
         detected_target = metadata.get("requested_target")
+        host_os_fingerprints = metadata.get("host_os_fingerprints") or []
+        if not isinstance(host_os_fingerprints, list):
+            parser.error("ReconForge report metadata 'host_os_fingerprints' must be a list.")
     elif isinstance(payload, list):
         results = payload
+        host_os_fingerprints = []
         detected_target = results[0].get("host") if results else "Unknown"
     else:
         parser.error("Input JSON must be a ReconForge report object or a legacy list of findings.")
@@ -391,7 +405,10 @@ def main():
         parser.error("ReconForge report is missing a valid 'findings' list.")
     output = args.output or str(source.with_suffix(".html"))
     target = args.target or detected_target or "Unknown"
-    write_html_report(results, output, target=target)
+    write_html_report(
+        results, output, target=target,
+        host_os_fingerprints=host_os_fingerprints,
+    )
     print(f"HTML report saved to {output}")
 
 

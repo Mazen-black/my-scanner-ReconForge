@@ -59,7 +59,7 @@ MAX_CVE_RESULTS = 10
 MAX_EXPLOIT_RESULTS = 10
 MAX_CPE_QUERIES_PER_PORT = 5
 REPORT_SCHEMA_VERSION = "1.15"
-SCANNER_VERSION = "0.10.7"
+SCANNER_VERSION = "0.10.8"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)
@@ -656,6 +656,8 @@ def build_host_os_fingerprint(os_matches, requested=False, minimum_accuracy=90):
         accuracy = int(match.get("accuracy"))
     except (TypeError, ValueError):
         accuracy = None
+    if accuracy is not None and not 0 <= accuracy <= 100:
+        accuracy = None
     platform = infer_target_platform(os_matches, minimum_accuracy=minimum_accuracy)
     return {
         "status": "accepted_high_confidence" if platform else "unconfirmed_low_confidence_or_unknown_family",
@@ -676,7 +678,7 @@ def infer_target_platform(os_matches, minimum_accuracy=90):
         accuracy = int(match.get("accuracy"))
     except (TypeError, ValueError):
         return None
-    if accuracy < minimum_accuracy:
+    if not 0 <= accuracy <= 100 or accuracy < minimum_accuracy:
         return None
     os_name = str(match.get("name") or "").lower()
     if any(token in os_name for token in ("windows", "microsoft")):
@@ -912,6 +914,17 @@ def main():
         print(str(e))
         sys.exit(1)
 
+    os_detection_requested = bool(
+        getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)
+    )
+    host_os_fingerprints = {}
+    for host in hosts:
+        host_data = scanner[host]
+        os_matches = host_data.get("osmatch", []) if hasattr(host_data, "get") else []
+        host_os_fingerprints[host] = build_host_os_fingerprint(
+            os_matches, requested=os_detection_requested
+        )
+
     results = []
     for host in hosts:
         try:
@@ -963,12 +976,8 @@ def main():
             # Finalize NVD applicability before correlating exploit references with CVEs.
             cves = assess_cves(cves)
 
-            # Use only Nmap OS-match evidence when present; never infer OS from a service banner.
-            os_matches = scanner[host].get("osmatch", []) if hasattr(scanner[host], "get") else []
-            os_fingerprint = build_host_os_fingerprint(
-                os_matches,
-                requested=bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
-            )
+            # Reuse host-level Nmap evidence; never infer OS from a service banner.
+            os_fingerprint = host_os_fingerprints[host]
             target_platform = os_fingerprint["platform_family"]
             exploit_intelligence = build_exploit_intelligence(
                 exploits, cves, target_platform=target_platform
@@ -1033,7 +1042,11 @@ def main():
         "resolved_hosts": hosts,
         "ports": args.ports,
         "nmap_arguments": args.nmap_args,
-        "os_detection_requested": bool(getattr(args, "os_detection", False) or "-O" in shlex.split(args.nmap_args)),
+        "os_detection_requested": os_detection_requested,
+        "host_os_fingerprints": [
+            {"host": host, **fingerprint}
+            for host, fingerprint in sorted(host_os_fingerprints.items())
+        ],
         "started_at_utc": started_at.isoformat(timespec="seconds"),
         "completed_at_utc": completed_at.isoformat(timespec="seconds"),
         "duration_seconds": round(time.monotonic() - started_monotonic, 3),
@@ -1065,7 +1078,10 @@ def main():
     print(f"تم حفظ النتائج في {filename}")
     if args.html_output:
         try:
-            html_path = write_html_report(results, args.html_output, target=target)
+            html_path = write_html_report(
+                results, args.html_output, target=target,
+                host_os_fingerprints=scan_metadata["host_os_fingerprints"],
+            )
         except OSError as exc:
             print(f"تعذر حفظ تقرير HTML: {exc}")
             sys.exit(1)

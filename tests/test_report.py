@@ -229,6 +229,33 @@ class HTMLReportTests(unittest.TestCase):
             self.assertIn("lab-envelope.local", html)
             self.assertIn("CVE-2099-0001", html)
 
+    def test_cli_renders_host_os_metadata_when_host_has_no_open_services(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "host-only.json"
+            output = Path(temp_dir) / "host-only.html"
+            payload = {
+                "schema_version": "1.15",
+                "metadata": {
+                    "requested_target": "lab-with-filtered-ports.local",
+                    "host_os_fingerprints": [{
+                        "host": "192.0.2.30", "status": "accepted_high_confidence",
+                        "platform_family": "linux", "nmap_name": "Linux 5.x",
+                        "accuracy": 98, "minimum_accuracy": 90,
+                        "source": "Nmap OS detection",
+                    }],
+                },
+                "findings": [],
+            }
+            source.write_text(json.dumps(payload), encoding="utf-8")
+            with unittest.mock.patch.object(sys, "argv", ["report.py", str(source), "--output", str(output)]):
+                report_main()
+            html = output.read_text(encoding="utf-8")
+            self.assertIn("192.0.2.30", html)
+            self.assertIn("Linux 5.x", html)
+            self.assertIn("98%", html)
+            self.assertIn("Hosts with accepted OS match", html)
+            self.assertIn(">1</div>", html)
+
     def test_cli_rejects_non_object_metadata_in_report_envelope(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "invalid.json"

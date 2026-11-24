@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.7 · Report schema 1.15
+> **Current version:** Scanner 0.10.8 · Report schema 1.15
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -178,10 +178,10 @@ python -m unittest discover -s tests -v
 Reports use a versioned JSON envelope:
 
 - `schema_version`: report format version.
-- `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, and scanner version.
+- `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, scanner version, and one `host_os_fingerprints` record per resolved host (including hosts with no open TCP services).
 - `summary`: host, open-service, CVE-candidate, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
-- `host_os_fingerprint`: per-service copy of the host-level Nmap OS match, with status, broad platform family, match name, accuracy, minimum acceptance threshold, and source. The HTML report deduplicates this into one row per host and never treats Nmap accuracy as a probability.
+- Each finding's `host_os_fingerprint`: per-service copy of the host-level Nmap OS match for convenient service-level review. The HTML report uses the host-level metadata as its source of truth, falls back to per-service records for older reports, and never treats Nmap accuracy as a probability.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.
 - `http_assessment` stores the optional HTTP response metadata and header/cookie hardening observations, or `not_requested` when the option is disabled.
 - `web_intelligence` stores CMS/library hints and summary counts from the optional bounded HTML, robots, and sitemap inspection, or `not_requested` when disabled.
