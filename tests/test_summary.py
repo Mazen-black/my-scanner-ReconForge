@@ -94,6 +94,13 @@ class SummaryAggregationTests(unittest.TestCase):
         self.assertEqual(second["unique_cve_count"], 1)
         self.assertIsNone(second["highest_review_priority_score"])
 
+    def test_host_summary_uses_risk_level_when_priority_field_is_absent(self):
+        summary = summarize_findings([{
+            "host": "192.0.2.10", "port": 21,
+            "risk_assessment": {"score": 74.0, "level": "High"},
+        }])
+        self.assertEqual(summary["host_risk_summary"][0]["highest_review_priority"], "High")
+
     def test_duplicate_cve_rows_on_one_service_are_not_cross_service(self):
         summary = summarize_findings([{
             "host": "192.0.2.10", "port": 443,

@@ -51,7 +51,7 @@ def _host_risk_summary(findings, resolved_hosts):
         score = _valid_score(risk.get("score")) if isinstance(risk, dict) else None
         if score is not None and (entry["highest_review_priority_score"] is None or score > entry["highest_review_priority_score"]):
             entry["highest_review_priority_score"] = score
-            entry["highest_review_priority"] = str(risk.get("priority") or "Unspecified")
+            entry["highest_review_priority"] = str(risk.get("priority") or risk.get("level") or risk.get("priority_label") or "Unspecified")
 
         observed_on_service = set()
         for cve in _records(finding.get("cve_assessment")):
