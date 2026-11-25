@@ -94,8 +94,8 @@ from .assessment import (
 )
 
 MAX_EXPLOIT_RESULTS = 10
-REPORT_SCHEMA_VERSION = "1.15"
-SCANNER_VERSION = "0.10.10"
+REPORT_SCHEMA_VERSION = "1.16"
+SCANNER_VERSION = "0.10.11"
 
 # خريطة أسماء nmap "product" لأسماء CPE الرسمية في NVD
 # (nmap بيقول مثلاً "Apache httpd" لكن اسم الـ CPE الرسمي apache:http_server)

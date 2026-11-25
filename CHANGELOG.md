@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.11 - 2026-11-25
+
+- Add host-level risk summaries with unique CVEs deduplicated per host, cross-service CVE correlation, duplicate-observation counts, affected ports, and highest service review-priority score.
+- Extend the HTML dashboard with host-level correlation tables and transparent distinction between raw CVE observations and unique per-host CVEs.
+- Treat repeated CVE rows within one service as a single service observation; preserve separate counts when the same CVE affects multiple hosts.
+- Harden summary aggregation against malformed findings, CVE records, and invalid/non-finite risk scores.
+- Advance the additive report schema to 1.16 and scanner package version to 0.10.11.
+
 ## 0.10.10 - 2026-11-25
 
 - Add an explainable evidence-confidence profile separating Nmap service identity, NVD CVE applicability, explicit Exploit-DB/CVE linkage, and exploitability; render the consolidated profile in HTML reports.

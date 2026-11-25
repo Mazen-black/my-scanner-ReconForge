@@ -312,6 +312,20 @@ def render_html_report(results, target="Unknown", generated_at=None, host_os_fin
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     summary = summarize_findings(results, hosts=hosts)
     open_ports = summary["open_services"]
+    host_risk_rows = []
+    for host_item in summary["host_risk_summary"]:
+        host_risk_rows.append(
+            "<tr>"
+            f"<td>{_e(host_item['host'])}</td>"
+            f"<td class=\"numeric\">{host_item['services']}</td>"
+            f"<td>{_e(', '.join(host_item['ports']) or '—')}</td>"
+            f"<td class=\"numeric\">{host_item['unique_cve_count']}</td>"
+            f"<td>{_e(', '.join(host_item['cross_service_cves']) or 'None')}</td>"
+            f"<td>{_e(host_item['highest_review_priority'])}"
+            + (f" ({host_item['highest_review_priority_score']:.1f}/100)" if host_item['highest_review_priority_score'] is not None else "")
+            + "</td></tr>"
+        )
+    host_risk_html = "".join(host_risk_rows) or '<tr><td colspan="6" class="empty">No host risk data available.</td></tr>'
     cves = [cve for item in results for cve in (item.get("cve_assessment") or [])]
     exploits = [exploit for item in results for exploit in (item.get("searchsploit_assessment") or [])]
     exploit_intelligence_by_id = {
@@ -397,7 +411,10 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="cards">
 <div class="card"><div class="muted">Hosts scanned</div><div class="metric">{summary["hosts_scanned"]}</div></div>
 <div class="card"><div class="muted">Open services</div><div class="metric">{open_ports}</div></div>
-<div class="card"><div class="muted">CVE references</div><div class="metric">{len(cves)}</div></div>
+<div class="card"><div class="muted">CVE observations</div><div class="metric">{len(cves)}</div></div>
+<div class="card"><div class="muted">Unique CVE candidates per host</div><div class="metric">{summary['unique_host_cves']}</div></div>
+<div class="card"><div class="muted">Candidates on multiple services</div><div class="metric">{summary['cross_service_cves']}</div></div>
+<div class="card"><div class="muted">Duplicate candidate observations</div><div class="metric">{summary['duplicate_cve_observations']}</div></div>
 <div class="card"><div class="muted">High / Critical CVEs</div><div class="metric">{high_critical}</div></div>
 <div class="card"><div class="muted">Version matches</div><div class="metric">{confirmed_matches}</div></div>
 <div class="card"><div class="muted">High / Critical review priority</div><div class="metric">{high_priority}</div></div>
@@ -409,6 +426,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">Services with remediation guidance</div><div class="metric">{summary["remediation_guidance_services"]}</div></div>
 <div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results, host_os_fingerprints)}</div></div>
 </div>
+<section><h2>Host-Level Risk & CVE Correlation</h2><p class="muted">CVE candidates are deduplicated within each host, not across different hosts. A candidate observed on multiple services is shown once in the host total and separately identified as cross-service correlation. These are assessment candidates, not confirmed vulnerabilities. Scores are the highest service review-priority score, not a host compromise probability.</p><div class="table-wrap"><table><thead><tr><th>Host</th><th>Services</th><th>Observed ports</th><th>Unique CVE candidates</th><th>Cross-service candidates</th><th>Highest review priority</th></tr></thead><tbody>{host_risk_html}</tbody></table></div></section>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Host OS fingerprint</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>
@@ -465,10 +483,10 @@ def main():
             if not match:
                 parser.error("Report schema_version must use MAJOR.MINOR format.")
             major, minor = map(int, match.groups())
-            if major != 1 or minor > 15:
+            if major != 1 or minor > 16:
                 parser.error(
                     f"Unsupported report schema version {schema_version!r}; "
-                    "this version supports schema 1.0 through 1.15."
+                    "this version supports schema 1.0 through 1.16."
                 )
         results = payload.get("findings")
         metadata = payload.get("metadata") or {}

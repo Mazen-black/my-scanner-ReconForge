@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reconforge"
-version = "0.10.10"
+version = "0.10.11"
 description = "Network reconnaissance and evidence-based vulnerability assessment toolkit"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,7 +6,7 @@
 
 A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-> **Current version:** Scanner 0.10.10 · Report schema 1.15
+> **Current version:** Scanner 0.10.11 · Report schema 1.16
 
 **Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
@@ -26,7 +26,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
 - Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
-- Generates a standalone HTML dashboard with escaped untrusted values, and can render schema 1.0–1.15 envelopes, older unversioned envelopes, and legacy list reports. Newer/unknown schema versions and malformed JSON are rejected with a clear CLI error rather than silently misinterpreted.
+- Generates a standalone HTML dashboard with escaped untrusted values, and can render schema 1.0–1.16 envelopes, older unversioned envelopes, and legacy list reports. Newer/unknown schema versions and malformed JSON are rejected with a clear CLI error rather than silently misinterpreted.
 - Supports `--no-nvd` for offline operation when NVD is unavailable.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Adds an evidence-confidence model that separates CVE applicability confidence from exploitability confidence, records evidence sources/reasons/gaps, and never treats CVSS severity or an Exploit-DB title match as proof of exploitability.
@@ -197,7 +197,7 @@ Reports use a versioned JSON envelope:
 
 - `schema_version`: report format version.
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, scanner version, and one `host_os_fingerprints` record per resolved host (including hosts with no open TCP services).
-- `summary`: host, open-service, CVE-candidate, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts.
+- `summary`: host, open-service, raw CVE-observation, unique per-host CVE, cross-service CVE, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts. Includes a per-host risk summary with observed ports and the highest service review-priority score.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 - Each finding's `host_os_fingerprint`: per-service copy of the host-level Nmap OS match for convenient service-level review. The HTML report uses the host-level metadata as its source of truth, falls back to per-service records for older reports, and never treats Nmap accuracy as a probability.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.

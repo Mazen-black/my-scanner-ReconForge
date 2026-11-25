@@ -4,7 +4,7 @@ import requests
 
 from .assessment import analyze_http_security, analyze_web_content
 
-SCANNER_VERSION = "0.10.10"
+SCANNER_VERSION = "0.10.11"
 
 
 HTTP_PROBE_PORTS = {80, 443, 8000, 8080, 8081, 8443, 8888}

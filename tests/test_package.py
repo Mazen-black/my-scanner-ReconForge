@@ -6,7 +6,7 @@ import reconforge
 
 class PackageTests(unittest.TestCase):
     def test_package_version_matches_current_release(self):
-        self.assertEqual(reconforge.__version__, "0.10.10")
+        self.assertEqual(reconforge.__version__, "0.10.11")
 
     def test_legacy_root_modules_are_package_module_aliases(self):
         for module_name in (

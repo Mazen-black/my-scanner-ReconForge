@@ -313,7 +313,7 @@ class HTMLReportTests(unittest.TestCase):
             source = Path(temp_dir) / "host-only.json"
             output = Path(temp_dir) / "host-only.html"
             payload = {
-                "schema_version": "1.15",
+                "schema_version": "1.16",
                 "metadata": {
                     "requested_target": "lab-with-filtered-ports.local",
                     "host_os_fingerprints": [{
@@ -344,7 +344,7 @@ class HTMLReportTests(unittest.TestCase):
         self.assertNotIn('<span class="severity low">Low</span>', html)
 
     def test_cli_rejects_malformed_or_unsupported_schema_versions(self):
-        invalid_versions = ("latest", "1", "2.0", "1.16", "1.x")
+        invalid_versions = ("latest", "1", "2.0", "1.17", "1.x")
         for version in invalid_versions:
             with self.subTest(schema_version=version), tempfile.TemporaryDirectory() as temp_dir:
                 source = Path(temp_dir) / "future.json"
