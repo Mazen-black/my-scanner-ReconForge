@@ -57,6 +57,21 @@ def _version_tuple(value):
         return None
 
 
+def _has_vendor_revision(value):
+    """Detect common downstream package revisions that may contain security backports."""
+    text = (value or "").strip().lower()
+    if not text:
+        return False
+    # Nmap may append distro package data after whitespace (e.g. "5.9p1 Debian 5ubuntu1.10").
+    markers = (
+        r"(?:^|[\s+~_.-])ubuntu(?:[0-9]|[\s+~_.-]|$)",
+        r"(?:^|[\s+~_.-])debian(?:[0-9]|[\s+~_.-]|$)",
+        r"(?:^|[\s+~_.-])(?:el|fc|amzn|suse|opensuse)[0-9]*(?:[\s+~_.-]|$)",
+        r"(?:^|[\s+~_.-])(?:deb|ds)[0-9]*(?:[\s+~_.-]|$)",
+    )
+    return any(re.search(pattern, text) for pattern in markers)
+
+
 def _compare_versions(left, right):
     a, b = _version_tuple(left), _version_tuple(right)
     if a is None or b is None:
@@ -71,6 +86,10 @@ def _version_match(match, detected_version):
     criteria = match.get("criteria") or match.get("cpe23Uri") or ""
     fields = criteria.split(":")
     criteria_version = fields[5] if len(fields) > 5 else "*"
+    # Exact textual equality is not enough for downstream package revisions: a
+    # distro may backport a fix without changing the upstream version component.
+    if _has_vendor_revision(detected_version) or _has_vendor_revision(criteria_version):
+        return None, None, f"{criteria}: vendor/distribution package revision may contain backported fixes and is not verified"
     bounds = [
         (match.get("versionStartIncluding"), ">="),
         (match.get("versionStartExcluding"), ">"),

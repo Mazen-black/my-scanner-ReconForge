@@ -42,7 +42,31 @@ class CVEApplicabilityTests(unittest.TestCase):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57-ubuntu1")
         self.assertEqual(result["status"], "candidate_unverified")
-        self.assertTrue(any("not safely comparable" in item for item in result["evidence_gaps"]))
+        self.assertTrue(any("backported fixes" in item for item in result["evidence_gaps"]))
+
+    def test_exact_vendor_revision_is_not_promoted_by_textual_equality(self):
+        version = "2.4.57-ubuntu1"
+        cve = self._cve(self._match(f"cpe:2.3:a:apache:http_server:{version}:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", version)
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("backported fixes" in item for item in result["evidence_gaps"]))
+
+    def test_nmap_banner_with_distro_package_suffix_remains_unverified(self):
+        cve = self._cve(self._match("cpe:2.3:a:openssh:openssh:5.9p1:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(
+            cve, "openssh", "openssh", "5.9p1 Debian 5ubuntu1.10"
+        )
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("backported fixes" in item for item in result["evidence_gaps"]))
+
+    def test_rhel_package_revision_is_not_compared_as_upstream_version(self):
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            versionStartIncluding="2.4.0", versionEndExcluding="2.4.58"
+        ))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57-12.el9")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("backported fixes" in item for item in result["evidence_gaps"]))
 
     def test_constrained_cpe_target_os_remains_unverified(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:windows:*:*"))
