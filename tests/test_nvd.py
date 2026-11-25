@@ -11,6 +11,58 @@ class NVDModuleTests(unittest.TestCase):
     def test_version_candidates_preserve_full_version_and_safe_major_minor(self):
         self.assertEqual(nvd._version_candidates("2.4.57"), ["2.4.57", "2.4"])
 
+    def test_service_lookup_ignores_os_cpe_in_nmap_service_inventory(self):
+        fetcher = Mock(return_value={"vulnerabilities": []})
+        cves, tried = nvd.check_cve_nvd(
+            Mock(),
+            {
+                "name": "http",
+                "product": "Apache httpd",
+                "version": "2.4.57",
+                "cpe": [
+                    "cpe:/o:canonical:ubuntu_linux:22.04",
+                    "cpe:/a:apache:http_server:2.4.57",
+                ],
+            },
+            None,
+            Mock(),
+            10,
+            fetcher=fetcher,
+        )
+        self.assertEqual(cves, [])
+        self.assertTrue(tried)
+        queried = [
+            call.args[1]["virtualMatchString"]
+            for call in fetcher.call_args_list
+            if "virtualMatchString" in call.args[1]
+        ]
+        self.assertTrue(all(":o:" not in cpe for cpe in queried))
+        self.assertTrue(any(":a:apache:http_server:" in cpe for cpe in queried))
+
+    def test_os_cpe_alone_is_not_misused_as_service_version_evidence(self):
+        fetcher = Mock(return_value={"vulnerabilities": []})
+        cves, tried = nvd.check_cve_nvd(
+            Mock(),
+            {
+                "name": "unknown-service",
+                "version": "22.04",
+                "cpe": ["cpe:/o:canonical:ubuntu_linux:22.04"],
+            },
+            None,
+            Mock(),
+            10,
+            fetcher=fetcher,
+        )
+        self.assertEqual(cves, [])
+        self.assertEqual(tried, [])
+        fetcher.assert_not_called()
+
+    def test_distribution_suffix_is_preserved_in_query_candidate(self):
+        self.assertEqual(
+            nvd._version_candidates("2.4.57-ubuntu1"),
+            ["2.4.57-ubuntu1", "2.4"],
+        )
+
     def test_cvss_extraction_prefers_cvss_v31(self):
         cve = {
             "metrics": {

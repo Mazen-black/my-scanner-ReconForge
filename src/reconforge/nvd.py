@@ -250,6 +250,11 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page, fetche
         cpe23 = _cpe22_to_cpe23(uri)
         if cpe23:
             parts = cpe23.split(":")
+            # This lookup assesses a detected service/product and its service
+            # version. OS/hardware CPEs are environmental evidence, not service
+            # identities; comparing them to the service banner version is invalid.
+            if parts[2] != "a":
+                continue
             bases.append((parts[2], f"{parts[3]}:{parts[4]}", "cpe من nmap"))
     product = (port_data.get("product") or "").strip()
     service = (port_data.get("name") or "").strip()
