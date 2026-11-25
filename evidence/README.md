@@ -1,6 +1,9 @@
 # Authorized Metasploitable 2 Lab Evidence
 
-This folder contains a real ReconForge scan and the HTML dashboard rendered from the same scan report.
+This folder contains two complementary evidence sets:
+
+1. A real, bounded, authorized Metasploitable 2 lab scan and the HTML dashboard rendered from that exact report.
+2. A clearly labeled synthetic test fixture and dashboard that demonstrate host-level CVE deduplication, cross-service correlation, and preservation of mixed applicability evidence. The synthetic fixture is fabricated test data, not a network scan or a real vulnerability finding.
 
 ## Run details
 
@@ -28,6 +31,10 @@ This folder contains a real ReconForge scan and the HTML dashboard rendered from
 
 - `metasploitable2-authorized-scan.json` — machine-readable ReconForge output, including service evidence, summary counts, and assessment limitations.
 - `metasploitable2-authorized-dashboard.html` — standalone HTML dashboard generated from the same findings using ReconForge's report renderer.
+- `reconforge-host-cve-correlation-demo.json` — fabricated, explicitly labeled test fixture showing 3 service observations, 2 unique per-host CVE candidates, and 1 CVE observed across two services.
+- `reconforge-host-cve-correlation-demo.html` — dashboard rendered from that exact synthetic JSON file; it displays the two ports and their different applicability states (`version_match` and `candidate_unverified`).
+
+The synthetic fixture uses the documentation-only address `192.0.2.10` and fabricated CVE identifiers. It exists solely to make the aggregation/reporting behavior visible when the real lab scan has NVD disabled; it is not evidence of an actual vulnerability.
 
 ## Reproduce
 

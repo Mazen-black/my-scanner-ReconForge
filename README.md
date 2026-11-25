@@ -187,7 +187,7 @@ Replace `192.0.2.10` with a lab target or another system you are authorized to s
 
 ## Sample lab evidence
 
-The [`evidence/`](evidence/) directory contains a reproducible, authorized Metasploitable 2 lab scan: the raw JSON report and the standalone HTML dashboard generated from the same run. The evidence README records the scan scope and clearly notes that NVD lookups were disabled for this eight-port run; SearchSploit references are leads for manual review, not confirmed vulnerabilities.
+The [`evidence/`](evidence/) directory contains two complementary proof sets: (1) a reproducible, authorized Metasploitable 2 scan with its raw JSON report and the HTML dashboard rendered from that same run, and (2) a clearly labeled synthetic JSON/dashboard fixture demonstrating per-host CVE deduplication, cross-service correlation, and mixed applicability evidence. The real eight-port scan intentionally disabled NVD lookups, so it does not claim to prove CVE absence; the synthetic fixture is fabricated test data, not a real scan or vulnerability.
 
 ## Tests
 
