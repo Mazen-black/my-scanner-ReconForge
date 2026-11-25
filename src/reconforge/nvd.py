@@ -310,7 +310,12 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page, fetche
         for item in data.get("vulnerabilities") or []:
             cve = item.get("cve") or {}
             cve_id = cve.get("id")
-            if not cve_id or cve_id in found:
+            if not cve_id:
+                continue
+            query_evidence = {"type": "cpe", "query": cpe, "source": source}
+            if cve_id in found:
+                if query_evidence not in found[cve_id]["query_evidence"]:
+                    found[cve_id]["query_evidence"].append(query_evidence)
                 continue
             score, severity, metric = _cvss_of(cve)
             desc = ""
@@ -327,6 +332,7 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page, fetche
                 "summary": desc,
                 "configurations": cve.get("configurations") or [],
                 "source": "NVD CPE query",
+                "query_evidence": [query_evidence],
             }
 
     # لو مفيش نتايج من الـ CPE: محاولة أخيرة بـ keywordSearch (أقل دقة)

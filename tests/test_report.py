@@ -103,6 +103,18 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Candidate source: NVD CPE query", html)
         self.assertNotIn("Backport status <unknown>", html)
 
+    def test_dashboard_shows_which_nvd_cpe_query_retrieved_candidate(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["query_evidence"] = [{
+            "type": "cpe",
+            "source": "Nmap service CPE",
+            "query": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Retrieved by NVD query", html)
+        self.assertIn("Nmap service CPE", html)
+        self.assertIn("cpe:2.3:a:apache:http_server:2.4.57", html)
+
     def test_report_preserves_risk_scores_on_zero_to_one_hundred_scale(self):
         findings = self.sample()
         findings[0]["risk_assessment"] = {

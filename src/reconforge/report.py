@@ -92,6 +92,14 @@ def _cve_rows(cves):
                 details.append("vulnerable=true")
             evidence_lines.append(f"{criteria} ({'; '.join(details)})")
         limitations = applicability.get("limitations") or []
+        query_evidence = cve.get("query_evidence") or []
+        query_lines = []
+        for query in query_evidence:
+            if not isinstance(query, dict):
+                continue
+            query_value = query.get("query") or query.get("keyword")
+            if query_value:
+                query_lines.append(f'{query.get("source") or query.get("type") or "NVD"}: {query_value}')
         summary = str(cve.get("summary") or "")
         if contextual.get("condition"):
             summary += " Additional verification required: " + str(contextual["condition"])
@@ -112,6 +120,7 @@ def _cve_rows(cves):
             + (f'<div class="muted">Matched NVD CPE evidence: {_e(" | ".join(evidence_lines))}</div>' if evidence_lines else '')
             + (f'<div class="muted">Limitations: {_e("; ".join(limitations))}</div>' if limitations else '')
             + (f'<div class="muted">Candidate source: {_e(cve.get("source"))}</div>' if cve.get("source") else '')
+            + (f'<div class="muted">Retrieved by NVD query: {_e(" | ".join(query_lines))}</div>' if query_lines else '')
             + '</td>'
             f'<td>{_e(summary)}</td>'
             '</tr>'

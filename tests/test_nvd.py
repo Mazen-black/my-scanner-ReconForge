@@ -63,6 +63,33 @@ class NVDModuleTests(unittest.TestCase):
             ["2.4.57-ubuntu1", "2.4"],
         )
 
+    def test_cve_retains_all_cpe_queries_that_retrieved_it(self):
+        response = {
+            "vulnerabilities": [{
+                "cve": {
+                    "id": "CVE-2099-0001",
+                    "metrics": {},
+                    "descriptions": [{"lang": "en", "value": "Synthetic test candidate"}],
+                    "configurations": [],
+                }
+            }]
+        }
+        fetcher = Mock(return_value=response)
+        cves, tried = nvd.check_cve_nvd(
+            Mock(),
+            {"name": "http", "product": "Apache httpd", "version": "2.4.57"},
+            None,
+            Mock(),
+            10,
+            fetcher=fetcher,
+        )
+        self.assertTrue(tried)
+        self.assertEqual(len(cves), 1)
+        self.assertEqual(cves[0]["id"], "CVE-2099-0001")
+        self.assertGreaterEqual(len(cves[0]["query_evidence"]), 2)
+        self.assertTrue(all(item["type"] == "cpe" for item in cves[0]["query_evidence"]))
+        self.assertTrue(all(item["query"].startswith("cpe:2.3:a:apache:http_server:") for item in cves[0]["query_evidence"]))
+
     def test_cvss_extraction_prefers_cvss_v31(self):
         cve = {
             "metrics": {
