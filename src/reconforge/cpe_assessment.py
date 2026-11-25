@@ -3,14 +3,45 @@ import re
 from urllib.parse import unquote
 
 
+def _split_escaped(value, delimiter=":", unescape=False):
+    """Split a CPE binding on unescaped delimiters, optionally decoding escapes."""
+    fields, current = [], []
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append(char if unescape else "\\" + char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == delimiter:
+            fields.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    if escaped:
+        return None
+    fields.append("".join(current))
+    return fields
+
+
+def _cpe23_fields(criteria):
+    """Parse CPE 2.3 formatted binding without treating escaped colons as separators."""
+    if not isinstance(criteria, str) or not criteria.startswith("cpe:2.3:"):
+        return None
+    fields = _split_escaped(criteria, unescape=True)
+    if fields is None or len(fields) != 13 or fields[:2] != ["cpe", "2.3"]:
+        return None
+    return fields
+
+
 def cpe22_to_cpe23(uri):
     """Convert CPE 2.2 URI to a valid 13-component CPE 2.3 formatted string."""
     uri = (uri or "").strip()
     if not uri:
         return None
     if uri.startswith("cpe:2.3:"):
-        parts = uri.split(":")
-        if len(parts) < 5:
+        parts = _split_escaped(uri)
+        if parts is None or len(parts) < 5 or parts[:2] != ["cpe", "2.3"]:
             return None
         attrs = parts[2:]
         if len(attrs) > 11:
@@ -21,24 +52,15 @@ def cpe22_to_cpe23(uri):
         return None
     # CPE 2.2 URI uses escaped separators and percent-encoding.
     raw = uri[5:]
-    fields, current, escaped = [], [], False
-    for ch in raw:
-        if escaped:
-            current.append(ch)
-            escaped = False
-        elif ch == "\\":
-            escaped = True
-        elif ch == ":":
-            fields.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
-    fields.append("".join(current))
-    fields = [unquote(x) if x else "*" for x in fields]
-    if len(fields) < 3 or fields[0] not in ("a", "o", "h"):
+    fields = _split_escaped(raw, unescape=True)
+    if fields is None:
         return None
-    fields = fields[:11]
+    fields = [unquote(x) if x else "*" for x in fields]
+    if len(fields) < 3 or len(fields) > 11 or fields[0] not in ("a", "o", "h"):
+        return None
     fields += ["*"] * (11 - len(fields))
+    # Re-escape the two characters that can change the formatted-binding structure.
+    fields = [value.replace("\\", "\\\\").replace(":", "\\:") for value in fields]
     return "cpe:2.3:" + ":".join(fields)
 
 
@@ -92,7 +114,7 @@ def _compare_versions(left, right):
 def _version_match(match, detected_version):
     """Return (state, evidence, reason): state is True, False, or None (unknown)."""
     criteria = match.get("criteria") or match.get("cpe23Uri") or ""
-    fields = criteria.split(":")
+    fields = _cpe23_fields(criteria) or []
     criteria_version = fields[5] if len(fields) > 5 else "*"
     # Exact textual equality is not enough for downstream package revisions: a
     # distro may backport a fix without changing the upstream version component.
@@ -174,8 +196,8 @@ def _evaluate_config_node(node, vendor, product, detected_version, part):
             uncertain.append("Malformed cpeMatch entry")
             continue
         criteria = match.get("criteria") or match.get("cpe23Uri") or ""
-        fields = criteria.split(":")
-        if len(fields) != 13 or fields[0:2] != ["cpe", "2.3"]:
+        fields = _cpe23_fields(criteria) or []
+        if len(fields) != 13:
             states.append(None)
             uncertain.append("CPE criteria is incomplete or malformed; expected all 11 CPE 2.3 attributes")
             continue

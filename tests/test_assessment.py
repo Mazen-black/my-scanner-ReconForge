@@ -17,10 +17,20 @@ class CPEConversionTests(unittest.TestCase):
         self.assertEqual(value, "cpe:2.3:a:vendor:product:1.2:*:*:*:*:*:*:*")
         self.assertEqual(len(value.split(":")), 13)
 
+    def test_cpe23_escaped_colon_is_not_treated_as_component_separator(self):
+        value = "cpe:2.3:a:vendor:product\\:variant:1.2:*:*:*:*:*:*:*"
+        self.assertEqual(cpe22_to_cpe23(value), value)
+
+    def test_cpe22_percent_encoded_colon_is_escaped_in_cpe23_output(self):
+        value = cpe22_to_cpe23("cpe:/a:vendor:product%3Avariant:1.2")
+        self.assertEqual(value, "cpe:2.3:a:vendor:product\\:variant:1.2:*:*:*:*:*:*:*")
+
     def test_invalid_cpe_returns_none(self):
         self.assertIsNone(cpe22_to_cpe23(""))
         self.assertIsNone(cpe22_to_cpe23("not-a-cpe"))
         self.assertIsNone(cpe22_to_cpe23("cpe:/x:vendor:product:1.0"))
+        self.assertIsNone(cpe22_to_cpe23("cpe:/a:vendor:product:1.0:1:2:3:4:5:6:7:8"))
+        self.assertIsNone(cpe22_to_cpe23("cpe:/a:vendor:product:1.0\\"))
 
 
 class CVEApplicabilityTests(unittest.TestCase):
@@ -37,6 +47,11 @@ class CVEApplicabilityTests(unittest.TestCase):
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "version_match")
         self.assertEqual(result["evidence"][0]["reason"], "exact_version")
+
+    def test_escaped_colon_in_cpe_product_is_parsed_as_part_of_identity(self):
+        cve = self._cve(self._match("cpe:2.3:a:vendor:product\\:variant:1.2:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "vendor", "product:variant", "1.2")
+        self.assertEqual(result["status"], "version_match")
 
     def test_vendor_version_suffix_is_not_stripped_for_comparison(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*"))
