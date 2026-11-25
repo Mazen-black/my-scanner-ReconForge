@@ -30,6 +30,46 @@ class InputValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             scanner.normalize_nmap_args('"unterminated')
 
+    def test_os_detection_flag_adds_nmap_os_scan(self):
+        args = scanner.parse_args(["--target", "192.0.2.10", "--os-detection"])
+        self.assertIn("-O", args.nmap_args.split())
+        self.assertTrue(args.os_detection)
+
+    def test_os_detection_flag_does_not_duplicate_existing_nmap_option(self):
+        args = scanner.parse_args(["--target", "192.0.2.10", "--nmap-args", "-sV -O", "--os-detection"])
+        self.assertEqual(args.nmap_args.split().count("-O"), 1)
+
+    def test_os_fingerprint_requires_high_confidence_match(self):
+        self.assertEqual(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "98"}]), "linux")
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "75"}]))
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x"}]))
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "101"}]))
+        self.assertIsNone(scanner.infer_target_platform([{"name": "Linux 6.x", "accuracy": "-1"}]))
+        self.assertIsNone(scanner.infer_target_platform([]))
+
+    def test_os_fingerprint_report_preserves_match_and_confidence(self):
+        evidence = scanner.build_host_os_fingerprint([{"name": "Linux 6.x", "accuracy": "98"}], requested=True)
+        self.assertEqual(evidence["status"], "accepted_high_confidence")
+        self.assertEqual(evidence["platform_family"], "linux")
+        self.assertEqual(evidence["accuracy"], 98)
+        low = scanner.build_host_os_fingerprint([{"name": "Linux 6.x", "accuracy": "75"}], requested=True)
+        self.assertEqual(low["status"], "unconfirmed_low_confidence_or_unknown_family")
+        self.assertIsNone(low["platform_family"])
+        invalid = scanner.build_host_os_fingerprint([{"name": "Linux 6.x", "accuracy": "101"}], requested=True)
+        self.assertEqual(invalid["status"], "unconfirmed_low_confidence_or_unknown_family")
+        self.assertIsNone(invalid["accuracy"])
+        self.assertIsNone(invalid["platform_family"])
+
+    def test_os_fingerprint_maps_supported_families(self):
+        cases = {
+            "Microsoft Windows Server 2022": "windows",
+            "FreeBSD 13.x": "unix",
+            "Apple macOS 14": "macos",
+        }
+        for name, expected in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(scanner.infer_target_platform([{"name": name, "accuracy": "95"}]), expected)
+
     def test_scanned_hosts_uses_resolved_hosts_not_input_hostname(self):
         class FakeScanner:
             def all_hosts(self):
@@ -79,6 +119,24 @@ class CheckCVEIntegrationTests(unittest.TestCase):
         self.assertNotIn("configurations", cves[0])
         self.assertTrue(tried)
         self.assertEqual(mock_fetch.call_count, 2)
+
+    @patch("scanner.nvd_fetch", return_value={"vulnerabilities": []})
+    def test_single_string_nmap_cpe_is_used_as_one_cpe_query(self, mock_fetch):
+        scanner.check_cve_nvd(
+            session=None,
+            port_data={
+                "name": "ftp", "product": "vsftpd", "version": "2.3.4",
+                "cpe": "cpe:/a:vsftpd:vsftpd:2.3.4",
+            },
+            api_key=None,
+            limiter=None,
+            results_per_page=10,
+        )
+        first_query = mock_fetch.call_args_list[0].args[1]["virtualMatchString"]
+        self.assertEqual(
+            first_query,
+            "cpe:2.3:a:vsftpd:vsftpd:2.3.4:*:*:*:*:*:*:*",
+        )
 
 
 class HTTPProbeTests(unittest.TestCase):
@@ -163,6 +221,75 @@ class WebIntelligenceProbeTests(unittest.TestCase):
 
 
 class SearchsploitLookupTests(unittest.TestCase):
+    def test_normalizes_only_explicit_known_requirement_values(self):
+        metadata = {
+            "authentication_required": {"value": "yes"},
+            "user_interaction": {"value": "maybe"},
+            "required_privileges": {"value": "root"},
+        }
+        normalized = scanner.normalize_documented_exploit_metadata(metadata)
+        self.assertEqual(normalized["authentication_required"]["status"], "yes")
+        self.assertEqual(normalized["user_interaction"]["status"], "unknown")
+        self.assertEqual(normalized["user_interaction"]["raw_value"], "maybe")
+        self.assertEqual(normalized["required_privileges"]["level"], "elevated")
+
+    def test_missing_requirement_metadata_normalizes_to_unknown(self):
+        normalized = scanner.normalize_documented_exploit_metadata({})
+        self.assertEqual(normalized["authentication_required"]["status"], "unknown")
+        self.assertEqual(normalized["user_interaction"]["status"], "unknown")
+        self.assertEqual(normalized["required_privileges"]["level"], "unknown")
+
+    def test_extracts_only_allowlisted_metadata_from_local_header(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            root.mkdir()
+            source = root / "sample.py"
+            source.write_text(
+                "# Exploit Title: Example\n"
+                "# Target Architecture: x86_64\n"
+                "# Required Privileges: root\n"
+                "# Authentication Required: no\n"
+                "# Notes: ignored\n"
+                "#!/usr/bin/python3\n"
+                "print('not metadata')\n",
+                encoding="utf-8",
+            )
+            result = scanner.extract_exploit_metadata(str(source), str(root))
+            self.assertEqual(result["target_architecture"]["value"], "x86_64")
+            self.assertEqual(result["required_privileges"]["value"], "root")
+            self.assertEqual(result["authentication_required"]["value"], "no")
+            self.assertNotIn("notes", result)
+
+    def test_rejects_paths_outside_exploitdb_root(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            outside = Path(temp) / "outside.py"
+            root.mkdir()
+            outside.write_text("# Target Architecture: x86\n", encoding="utf-8")
+            self.assertEqual(scanner.extract_exploit_metadata(str(outside), str(root)), {})
+
+    def test_stops_at_first_source_statement(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "exploits"
+            root.mkdir()
+            source = root / "sample.py"
+            source.write_text(
+                "# Exploit Title: Example\n"
+                "# Target Architecture: x86\n"
+                "import os\n"
+                "# Required Privileges: root\n",
+                encoding="utf-8",
+            )
+            result = scanner.extract_exploit_metadata(str(source), str(root))
+            self.assertIn("target_architecture", result)
+            self.assertNotIn("required_privileges", result)
+
     @patch("scanner.subprocess.run")
     @patch("scanner.shutil.which", return_value="/usr/bin/searchsploit")
     def test_missing_product_skips_searchsploit_command(self, mock_which, mock_run):
@@ -224,6 +351,11 @@ class IntegratedAssessmentTests(unittest.TestCase):
         self.assertIsNone(captured["findings"][0]["risk_assessment"]["score"])
         self.assertEqual(captured["findings"][0]["risk_assessment"]["asset_context"]["asset_criticality"], "high")
         self.assertEqual(captured["findings"][0]["remediation_guidance"]["mode"], "guidance_only")
+        guidance = captured["findings"][0]["remediation_guidance"]
+        self.assertEqual(guidance["finding_context"]["host"], "127.0.0.1")
+        self.assertEqual(guidance["finding_context"]["port"], 21)
+        self.assertEqual(guidance["service_guidance"]["evidence"]["product"], "vsftpd")
+        self.assertEqual(guidance["service_guidance"]["evidence"]["version"], "3.0.5")
         mock_write_html.assert_called_once()
         self.assertEqual(mock_write_html.call_args.args[0][0]["port"], 21)
 
@@ -248,7 +380,7 @@ class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
         from argparse import Namespace
 
         mock_args.return_value = Namespace(
-            target="127.0.0.1", ports="22", nmap_args="-sV",
+            target="127.0.0.1", ports="22", nmap_args="-sV", os_detection=False,
             results_per_page=10, nvd_api_key=None, no_exploitdb=False,
             http_probe=False, web_intel=False, output="report.json",
             no_nvd=False, asset_criticality="unknown", exposure="unknown",
@@ -286,7 +418,8 @@ class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
                             "cpe": [], "extrainfo": "", "tunnel": "",
                             "method": "probed", "conf": "10",
                         }
-                    }
+                    },
+                    "osmatch": [{"name": "Linux 5.x", "accuracy": "98"}],
                 }
 
         mock_port_scanner.return_value = FakeScanner()
@@ -305,6 +438,10 @@ class ScannerExploitIntelligenceIntegrationTests(unittest.TestCase):
             ["CVE-2024-12345"],
         )
         self.assertEqual(finding["exploit_intelligence"][0]["execution_status"], "not_executed")
+        self.assertEqual(finding["exploit_intelligence"][0]["platform_compatibility"]["status"], "platform_family_match")
+        self.assertFalse(captured["metadata"]["os_detection_requested"])
+        self.assertEqual(finding["host_os_fingerprint"]["platform_family"], "linux")
+        self.assertEqual(finding["host_os_fingerprint"]["accuracy"], 98)
         self.assertEqual(finding["risk_assessment"]["score"], 57.2)
         self.assertEqual(finding["risk_assessment"]["asset_context"]["contextual_priority_score"], 57.2)
         self.assertEqual(finding["remediation_guidance"]["mode"], "guidance_only")

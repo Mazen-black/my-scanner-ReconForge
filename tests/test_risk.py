@@ -56,6 +56,50 @@ class RiskScoringTests(unittest.TestCase):
         self.assertEqual(with_refs["exact_product_version_reference_count"], 1)
         self.assertFalse(with_refs["exploit_references_affect_score"])
 
+    def test_top_priority_exposes_cve_applicability_and_cvss_provenance(self):
+        summary = assess_service_risk([
+            {"id": "CVE-MATCH", "cvss": 5.0,
+             "applicability": {"status": "version_match"}},
+            {"id": "CVE-CANDIDATE", "cvss": 9.8,
+             "applicability": {"status": "candidate_unverified"}},
+        ], [])
+        self.assertEqual(summary["top_cve"], "CVE-CANDIDATE")
+        self.assertEqual(summary["top_cve_cvss_base_score"], 9.8)
+        self.assertEqual(summary["top_cve_applicability_status"], "candidate_unverified")
+        self.assertEqual(summary["top_cve_applicability_factor"], 0.65)
+
+    def test_priority_formula_and_factor_explanation_are_explicit(self):
+        result = score_cve({"cvss": 8.0, "applicability": {"status": "candidate_unverified"}})
+        self.assertEqual(result["formula"], "CVSS base score × 10 × applicability factor")
+        self.assertEqual(result["applicability_factor"], 0.65)
+        self.assertIn("Discounted factor", result["factor_explanation"])
+
+    def test_unknown_applicability_uses_documented_conservative_fallback(self):
+        result = score_cve({"cvss": 8.0, "applicability": {"status": "future_status"}})
+        self.assertEqual(result["applicability_status"], "unknown_status")
+        self.assertEqual(result["applicability_factor"], 0.5)
+        self.assertEqual(result["priority_score"], 40.0)
+        self.assertIn("manual review", result["factor_explanation"])
+
+    def test_invalid_cvss_values_never_receive_numeric_priority(self):
+        for value in (True, -0.1, 10.1, float("nan"), float("inf"), float("-inf"), "9.8"):
+            with self.subTest(value=value):
+                result = score_cve({"cvss": value, "applicability": {"status": "version_match"}})
+                self.assertIsNone(result["cvss_base_score"])
+                self.assertIsNone(result["priority_score"])
+                self.assertEqual(result["priority"], "Unscored")
+
+    def test_malformed_cve_and_exploit_entries_are_ignored(self):
+        summary = assess_service_risk([
+            None, "bad", {"id": "CVE-2099-8", "cvss": 7.0,
+                           "applicability": {"status": "version_match"}}
+        ], [None, "bad", {"id": "42", "assessment": "invalid"}])
+        self.assertEqual(summary["score"], 70.0)
+        self.assertEqual(summary["invalid_cve_entries_ignored"], 2)
+        self.assertEqual(summary["invalid_exploit_entries_ignored"], 2)
+        self.assertEqual(summary["exploit_reference_count"], 1)
+        self.assertEqual(summary["exact_product_version_reference_count"], 0)
+
     def test_service_uses_highest_applicable_priority(self):
         cves = [
             {"id": "CVE-1", "cvss": 5.0, "applicability": {"status": "version_match"}},
