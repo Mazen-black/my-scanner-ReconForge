@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Build Debian package
-        run: ./packaging/build-deb.sh
+        run: sh packaging/build-deb.sh
 
       - name: Validate Debian package metadata
         run: |
