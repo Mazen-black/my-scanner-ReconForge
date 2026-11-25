@@ -12,6 +12,7 @@ from .assessment import (
     assess_cve_applicability,
     cpe22_to_cpe23,
 )
+from .cpe_assessment import _cpe23_fields
 
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -126,9 +127,16 @@ def _cpe22_to_cpe23(uri):
 
 
 def _cpe23(ptype, vendor_product, version):
-    """يبني CPE 2.3 كامل من النوع + vendor:product + النسخة"""
+    """Build a CPE 2.3 binding, escaping delimiters inside individual attributes."""
     vendor, product = vendor_product.split(":", 1)
-    return f"cpe:2.3:{ptype}:{vendor}:{product}:{version}:*:*:*:*:*:*:*"
+
+    def escape_component(value):
+        return str(value).replace("\\", "\\\\").replace(":", "\\:")
+
+    return (
+        f"cpe:2.3:{ptype}:{escape_component(vendor)}:{escape_component(product)}:"
+        f"{escape_component(version)}:*:*:*:*:*:*:*"
+    )
 
 
 def _version_candidates(version):
@@ -249,10 +257,13 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page, fetche
     for uri in raw_cpes:
         cpe23 = _cpe22_to_cpe23(uri)
         if cpe23:
-            parts = cpe23.split(":")
+            parts = _cpe23_fields(cpe23)
+            if not parts:
+                continue
             # This lookup assesses a detected service/product and its service
             # version. OS/hardware CPEs are environmental evidence, not service
             # identities; comparing them to the service banner version is invalid.
+            # Parse escaped delimiters as component data, never as field boundaries.
             if parts[2] != "a":
                 continue
             bases.append((parts[2], f"{parts[3]}:{parts[4]}", "cpe من nmap"))
