@@ -24,6 +24,12 @@ def _split_escaped(value, delimiter=":", unescape=False):
     return fields
 
 
+def _escape_cpe23_component(value):
+    """Escape a literal attribute value for a CPE 2.3 formatted binding."""
+    safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._"
+    return "".join(char if char in safe else "\\" + char for char in str(value))
+
+
 def _cpe23_fields(criteria):
     """Parse CPE 2.3 formatted binding without treating escaped colons as separators."""
     if not isinstance(criteria, str) or not criteria.startswith("cpe:2.3:"):
@@ -55,13 +61,23 @@ def cpe22_to_cpe23(uri):
     fields = _split_escaped(raw, unescape=True)
     if fields is None:
         return None
-    fields = [unquote(x) if x else "*" for x in fields]
-    if len(fields) < 3 or len(fields) > 11 or fields[0] not in ("a", "o", "h"):
+    if len(fields) < 3 or len(fields) > 11:
         return None
-    fields += ["*"] * (11 - len(fields))
-    # Re-escape the two characters that can change the formatted-binding structure.
-    fields = [value.replace("\\", "\\\\").replace(":", "\\:") for value in fields]
-    return "cpe:2.3:" + ":".join(fields)
+    if fields[0] not in ("a", "o", "h"):
+        return None
+
+    def bind_uri_component(raw):
+        if raw == "":
+            return "*"
+        if raw.lower() == "%01":
+            return "?"
+        if raw.lower() == "%02":
+            return "*"
+        return _escape_cpe23_component(unquote(raw))
+
+    bound_fields = [bind_uri_component(value) for value in fields]
+    bound_fields += ["*"] * (11 - len(bound_fields))
+    return "cpe:2.3:" + ":".join(bound_fields)
 
 
 def _version_tuple(value):

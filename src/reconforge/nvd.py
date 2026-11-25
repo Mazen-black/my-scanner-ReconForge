@@ -12,7 +12,7 @@ from .assessment import (
     assess_cve_applicability,
     cpe22_to_cpe23,
 )
-from .cpe_assessment import _cpe23_fields
+from .cpe_assessment import _cpe23_fields, _escape_cpe23_component
 
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -130,12 +130,10 @@ def _cpe23(ptype, vendor_product, version):
     """Build a CPE 2.3 binding, escaping delimiters inside individual attributes."""
     vendor, product = vendor_product.split(":", 1)
 
-    def escape_component(value):
-        return str(value).replace("\\", "\\\\").replace(":", "\\:")
-
     return (
-        f"cpe:2.3:{ptype}:{escape_component(vendor)}:{escape_component(product)}:"
-        f"{escape_component(version)}:*:*:*:*:*:*:*"
+        f"cpe:2.3:{ptype}:{_escape_cpe23_component(vendor)}:"
+        f"{_escape_cpe23_component(product)}:{_escape_cpe23_component(version)}:"
+        f"*:*:*:*:*:*:*"
     )
 
 

@@ -25,6 +25,30 @@ class CPEConversionTests(unittest.TestCase):
         value = cpe22_to_cpe23("cpe:/a:vendor:product%3Avariant:1.2")
         self.assertEqual(value, "cpe:2.3:a:vendor:product\\:variant:1.2:*:*:*:*:*:*:*")
 
+    def test_cpe22_punctuation_is_quoted_in_formatted_binding(self):
+        value = cpe22_to_cpe23("cpe:/a:vendor%2Bname:product%3Fvariant%2Fedition:1.2")
+        self.assertEqual(
+            value,
+            "cpe:2.3:a:vendor\\+name:product\\?variant\\/edition:1.2:*:*:*:*:*:*:*",
+        )
+
+    def test_cpe22_literal_wildcard_characters_are_quoted(self):
+        value = cpe22_to_cpe23("cpe:/a:vendor:product%2Avariant:1.2")
+        self.assertEqual(
+            value,
+            "cpe:2.3:a:vendor:product\\*variant:1.2:*:*:*:*:*:*:*",
+        )
+
+    def test_cpe22_uri_wildcard_markers_keep_their_logical_meaning(self):
+        self.assertEqual(
+            cpe22_to_cpe23("cpe:/a:vendor:%02:1.2"),
+            "cpe:2.3:a:vendor:*:1.2:*:*:*:*:*:*:*",
+        )
+        self.assertEqual(
+            cpe22_to_cpe23("cpe:/a:vendor:%01:1.2"),
+            "cpe:2.3:a:vendor:?:1.2:*:*:*:*:*:*:*",
+        )
+
     def test_invalid_cpe_returns_none(self):
         self.assertIsNone(cpe22_to_cpe23(""))
         self.assertIsNone(cpe22_to_cpe23("not-a-cpe"))

@@ -63,6 +63,28 @@ class NVDModuleTests(unittest.TestCase):
             r"cpe:2.3:a:vendor:product\:variant:1.2:*:*:*:*:*:*:*",
         )
 
+    def test_literal_cpe_punctuation_is_reescaped_in_nvd_query(self):
+        fetcher = Mock(return_value={"vulnerabilities": []})
+        nvd.check_cve_nvd(
+            Mock(),
+            {
+                "name": "unknown-service",
+                "version": "1.2",
+                "cpe": [r"cpe:2.3:a:vendor\+name:product\?variant\*edition:1.2:*:*:*:*:*:*:*"],
+            },
+            None,
+            Mock(),
+            10,
+            fetcher=fetcher,
+        )
+        queries = [
+            call.args[1]["virtualMatchString"]
+            for call in fetcher.call_args_list
+            if "virtualMatchString" in call.args[1]
+        ]
+        self.assertTrue(queries)
+        self.assertTrue(all(r"vendor\+name:product\?variant\*edition" in q for q in queries))
+
     def test_os_cpe_alone_is_not_misused_as_service_version_evidence(self):
         fetcher = Mock(return_value={"vulnerabilities": []})
         cves, tried = nvd.check_cve_nvd(

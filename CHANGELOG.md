@@ -2,6 +2,8 @@
 
 ## 0.10.11 - 2026-11-25
 
+- Correctly quote CPE 2.3 punctuation in NVD query construction and CPE 2.2 URI conversion; preserve logical ANY/NA and encoded wildcard markers while keeping literal wildcard characters from becoming match operators.
+- Add regression coverage for escaped colons, punctuation, literal wildcards, and CPE 2.2 wildcard markers.
 - Add host-level risk summaries with unique CVEs deduplicated per host, cross-service CVE correlation, duplicate-observation counts, affected ports, and highest service review-priority score.
 - Extend the HTML dashboard with host-level correlation tables and transparent distinction between raw CVE observations and unique per-host CVEs.
 - Treat repeated CVE rows within one service as a single service observation; preserve separate counts when the same CVE affects multiple hosts.
