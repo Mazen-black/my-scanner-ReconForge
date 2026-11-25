@@ -87,8 +87,10 @@ sudo apt install nmap exploitdb
 
 Create a virtual environment and install Python dependencies:
 
+> The latest CPE/CVE correlation and host-level evidence improvements are currently on PR branch `fix/normalize-nmap-cpe-fingerprint`. Until that pull request is merged into `main`, include `--branch` when cloning so you do not install the older default branch.
+
 ```bash
-git clone https://github.com/Mazen-black/my-scanner-ReconForge.git
+git clone --branch fix/normalize-nmap-cpe-fingerprint https://github.com/Mazen-black/my-scanner-ReconForge.git
 cd my-scanner-ReconForge
 python3 -m venv .venv
 source .venv/bin/activate
