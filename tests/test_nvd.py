@@ -23,6 +23,18 @@ class NVDModuleTests(unittest.TestCase):
         }
         self.assertEqual(nvd._cvss_of(cve), (8.8, "HIGH", "cvssMetricV31"))
 
+    def test_cvss_extraction_rejects_boolean_and_out_of_range_scores(self):
+        for invalid in (True, False, -0.1, 10.1, float("nan"), float("inf"), float("-inf"), "9.8"):
+            with self.subTest(score=invalid):
+                cve = {"metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": invalid}}]}}
+                self.assertEqual(nvd._cvss_of(cve), (None, "", "cvssMetricV31"))
+
+    def test_cvss_extraction_keeps_valid_zero_and_ten(self):
+        for score in (0, 10, 0.1, 9.8):
+            with self.subTest(score=score):
+                cve = {"metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": score}}]}}
+                self.assertEqual(nvd._cvss_of(cve), (score, "", "cvssMetricV31"))
+
     def test_cve_lookup_accepts_an_explicit_fetcher(self):
         fetcher = Mock(return_value={"vulnerabilities": []})
         cves, tried = nvd.check_cve_nvd(

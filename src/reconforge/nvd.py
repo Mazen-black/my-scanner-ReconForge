@@ -1,5 +1,6 @@
 """NVD API access, CPE query construction, and CVE candidate assessment."""
 
+import math
 import re
 import time
 from collections import deque
@@ -224,7 +225,12 @@ def _cvss_of(cve):
             data = entry.get("cvssData") or {}
             score = data.get("baseScore")
             severity = entry.get("baseSeverity") or data.get("baseSeverity") or ""
-            if not isinstance(score, (int, float)):
+            if (
+                not isinstance(score, (int, float))
+                or isinstance(score, bool)
+                or not math.isfinite(score)
+                or not 0 <= score <= 10
+            ):
                 score = None
             return score, severity, key
     return None, "", ""
