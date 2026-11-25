@@ -80,6 +80,29 @@ class HTMLReportTests(unittest.TestCase):
         html = render_html_report(self.sample())
         self.assertIn("No host OS fingerprint data recorded.", html)
 
+    def test_dashboard_renders_matched_cpe_version_evidence_and_limitations(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["applicability"] = {
+            "status": "version_match",
+            "confidence": "medium",
+            "evidence": [{
+                "criteria": "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+                "reason": "exact_version",
+                "vulnerable": True,
+                "versionEndExcluding": "2.4.58",
+            }],
+            "limitations": ["Backport status <unknown> must be checked."],
+        }
+        findings[0]["cve_assessment"][0]["source"] = "NVD CPE query"
+        html = render_html_report(findings)
+        self.assertIn("Matched NVD CPE evidence", html)
+        self.assertIn("cpe:2.3:a:apache:http_server:2.4.57", html)
+        self.assertIn("versionEndExcluding=2.4.58", html)
+        self.assertIn("vulnerable=true", html)
+        self.assertIn("Backport status &lt;unknown&gt; must be checked.", html)
+        self.assertIn("Candidate source: NVD CPE query", html)
+        self.assertNotIn("Backport status <unknown>", html)
+
     def test_report_preserves_risk_scores_on_zero_to_one_hundred_scale(self):
         findings = self.sample()
         findings[0]["risk_assessment"] = {

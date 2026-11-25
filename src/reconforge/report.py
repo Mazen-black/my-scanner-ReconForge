@@ -76,6 +76,22 @@ def _cve_rows(cves):
         priority_score = priority.get("priority_score")
         priority_text = f"{priority_score:.1f}" if _valid_finite_number(priority_score, 0, 100) else "N/A"
         contextual = applicability.get("contextual_constraint") or {}
+        matched_evidence = applicability.get("evidence") or []
+        evidence_lines = []
+        for evidence in matched_evidence:
+            if not isinstance(evidence, dict):
+                continue
+            criteria = evidence.get("criteria")
+            if not criteria:
+                continue
+            details = [str(evidence.get("reason") or "evaluated")]
+            for key in ("versionStartIncluding", "versionStartExcluding", "versionEndIncluding", "versionEndExcluding"):
+                if evidence.get(key):
+                    details.append(f"{key}={evidence[key]}")
+            if evidence.get("vulnerable") is True:
+                details.append("vulnerable=true")
+            evidence_lines.append(f"{criteria} ({'; '.join(details)})")
+        limitations = applicability.get("limitations") or []
         summary = str(cve.get("summary") or "")
         if contextual.get("condition"):
             summary += " Additional verification required: " + str(contextual["condition"])
@@ -93,6 +109,9 @@ def _cve_rows(cves):
             + (f'<div class="muted">Why: {_e("; ".join(applicability.get("confidence_reasons") or []))}</div>' if applicability.get("confidence_reasons") else '')
             + (f'<div class="muted">Evidence gaps: {_e("; ".join(applicability.get("evidence_gaps") or []))}</div>' if applicability.get("evidence_gaps") else '')
             + (f'<div class="muted">CPE: {_e(applicability.get("cpe_version_status"))}; constraint: {_e(contextual.get("kind"))}</div>' if contextual else '')
+            + (f'<div class="muted">Matched NVD CPE evidence: {_e(" | ".join(evidence_lines))}</div>' if evidence_lines else '')
+            + (f'<div class="muted">Limitations: {_e("; ".join(limitations))}</div>' if limitations else '')
+            + (f'<div class="muted">Candidate source: {_e(cve.get("source"))}</div>' if cve.get("source") else '')
             + '</td>'
             f'<td>{_e(summary)}</td>'
             '</tr>'
