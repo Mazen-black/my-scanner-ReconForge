@@ -4,6 +4,8 @@ This layer never infers internet exposure or business criticality from open port
 The technical CVE priority remains available separately from contextual priority.
 """
 
+import math
+
 CRITICALITY_FACTORS = {
     "unknown": 1.0,
     "low": 0.80,
@@ -42,10 +44,12 @@ def assess_asset_context(technical_risk, criticality="unknown", exposure="unknow
     if exposure not in EXPOSURE_FACTORS:
         raise ValueError(f"Unsupported exposure: {exposure}")
 
-    technical_score = (technical_risk or {}).get("score")
+    technical_risk = technical_risk if isinstance(technical_risk, dict) else {}
+    technical_score = technical_risk.get("score")
     valid_score = (
         isinstance(technical_score, (int, float))
         and not isinstance(technical_score, bool)
+        and math.isfinite(technical_score)
         and 0 <= technical_score <= 100
     )
     criticality_factor = CRITICALITY_FACTORS[criticality]
@@ -61,6 +65,7 @@ def assess_asset_context(technical_risk, criticality="unknown", exposure="unknow
         "technical_priority_score": float(technical_score) if valid_score else None,
         "criticality_factor": criticality_factor,
         "exposure_factor": exposure_factor,
+        "formula": "technical priority × criticality factor × exposure factor (capped at 100)",
         "contextual_priority_score": contextual_score,
         "contextual_priority": _level(contextual_score),
         "is_cvss": False,

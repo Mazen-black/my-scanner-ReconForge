@@ -145,6 +145,36 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("&lt;Apache&gt;", html)
         self.assertNotIn('"product": "<Apache>"', html)
 
+    def test_dashboard_explains_technical_and_contextual_risk_factors(self):
+        findings = [{
+            "host": "192.0.2.20", "port": 443,
+            "service": {"name": "https", "product": "Example", "version": "1.0"},
+            "cve_assessment": [{
+                "id": "CVE-2099-9", "cvss": 8.0, "severity": "HIGH",
+                "applicability": {"status": "candidate_unverified"},
+                "risk_priority": {
+                    "priority": "Medium", "priority_score": 52.0,
+                    "applicability_factor": 0.65,
+                    "factor_explanation": "Discounted factor: applicability remains unverified.",
+                },
+            }],
+            "risk_assessment": {
+                "score": 52.0, "level": "Medium", "top_cve": "CVE-2099-9",
+                "model": "ReconForge-RP1", "notes": ["Review priority is not proof of exploitability."],
+                "asset_context": {
+                    "contextual_priority_score": 59.8, "contextual_priority": "Medium",
+                    "asset_criticality": "high", "network_exposure": "internet",
+                    "criticality_factor": 1.15, "exposure_factor": 1.0,
+                },
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("Factor: 0.65", html)
+        self.assertIn("Discounted factor", html)
+        self.assertIn("criticality ×1.15", html)
+        self.assertIn("exposure ×1.0", html)
+        self.assertIn("Review priority is not proof of exploitability", html)
+
     def test_report_renders_explicit_exploit_metadata_values(self):
         findings = [{
             "host": "127.0.0.1", "port": 22,

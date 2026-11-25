@@ -84,7 +84,9 @@ def _cve_rows(cves):
             f'<td><strong>{_e(cve.get("id"))}</strong></td>'
             f'<td><span class="severity {css}">{_e(severity)}</span></td>'
             f'<td class="numeric">{_e(score_text)}</td>'
-            f'<td><span class="severity {priority_css}">{_e(priority_level)}</span> <span class="muted">({_e(priority_text)})</span></td>'
+            f'<td><span class="severity {priority_css}">{_e(priority_level)}</span> <span class="muted">({_e(priority_text)})</span>'
+            + (f'<div class="muted">Factor: {_e(priority.get("applicability_factor"))}; {_e(priority.get("factor_explanation"))}</div>' if priority else '')
+            + f'</td>'
             f'<td>{_e(status)}'
             + f'<div class="muted">Applicability confidence: {_e(applicability.get("applicability_confidence", applicability.get("confidence", "unknown")))}; exploitability: {_e(applicability.get("exploitability_confidence", "unknown"))}</div>'
             + (f'<div class="muted">Sources: {_e("; ".join(applicability.get("evidence_sources") or []))}</div>' if applicability.get("evidence_sources") else '')
@@ -119,8 +121,12 @@ def _risk_rows(results):
             f'<td><span class="severity {css}">{_e(level)}</span></td>'
             f'<td class="numeric">{_e(score_text)}</td>'
             f'<td><span class="severity {context_css}">{_e(context_level)}</span> <span class="muted">({_e(context_text)})</span></td>'
-            f'<td>{_e(context.get("asset_criticality", "unknown"))} / {_e(context.get("network_exposure", "unknown"))}</td>'
-            f'<td>{_e(risk.get("top_cve"))}</td>'
+            f'<td>{_e(context.get("asset_criticality", "unknown"))} / {_e(context.get("network_exposure", "unknown"))}'
+            + (f'<div class="muted">Factors: criticality ×{_e(context.get("criticality_factor"))}; exposure ×{_e(context.get("exposure_factor"))}</div>' if context else '')
+            + '</td>'
+            f'<td>{_e(risk.get("top_cve"))}'
+            + (f'<div class="muted">{_e(risk.get("model"))}: {_e(risk.get("notes", [""])[0])}</div>' if risk.get("model") else '')
+            + '</td>'
             f'<td>{_e(risk.get("exploit_reference_count", 0))}</td>'
             '</tr>'
         )

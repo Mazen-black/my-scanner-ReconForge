@@ -31,6 +31,19 @@ class AssetContextTests(unittest.TestCase):
         self.assertIsNone(result["contextual_priority_score"])
         self.assertEqual(result["contextual_priority"], "Unscored")
 
+    def test_non_finite_and_boolean_technical_scores_stay_unscored(self):
+        for value in (True, float("nan"), float("inf"), float("-inf"), -1, 101, "50"):
+            with self.subTest(value=value):
+                result = assess_asset_context({"score": value}, "critical", "internet")
+                self.assertIsNone(result["technical_priority_score"])
+                self.assertIsNone(result["contextual_priority_score"])
+                self.assertEqual(result["contextual_priority"], "Unscored")
+
+    def test_non_mapping_technical_risk_is_safely_unscored(self):
+        result = assess_asset_context("invalid", "high", "internet")
+        self.assertIsNone(result["contextual_priority_score"])
+        self.assertIn("formula", result)
+
     def test_invalid_context_is_rejected(self):
         with self.assertRaises(ValueError):
             assess_asset_context({"score": 50}, "urgent", "internet")
