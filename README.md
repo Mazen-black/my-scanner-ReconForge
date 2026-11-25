@@ -113,7 +113,7 @@ If you do not use Searchsploit, omit the `exploitdb` system package and run with
 A Debian package build script is included for Kali/Debian users who prefer `apt`-managed installation. It builds locally and does not publish an APT repository or install anything by itself:
 
 ```bash
-./packaging/build-deb.sh
+sh packaging/build-deb.sh
 sudo apt install ./dist/reconforge_0.10.11_all.deb
 ```
 
