@@ -275,13 +275,16 @@ class HTMLReportTests(unittest.TestCase):
                 "architecture_assessment": "unknown_not_inferred_from_platform_label",
             },
             "triage": {"status": "manual_cve_correlation_required"},
-            "cve_correlation": {"status": "no_explicit_cve_link"},
+            "cve_correlation": {"status": "explicit_cve_match_applicability_unverified",
+                                 "link_confidence": "high_for_identifier_link_only",
+                                 "link_basis": ["source_fields", "duplicate_observations"]},
         }]
         html = render_html_report(findings)
         self.assertIn("Platform compatibility", html)
         self.assertIn("platform_mismatch_candidate", html)
         self.assertIn("Requirements / architecture", html)
         self.assertIn("unknown_not_inferred_from_exploit_title", html)
+        self.assertIn("Identifier evidence sources: source_fields, duplicate_observations", html)
 
     def test_report_shows_contextual_cve_constraints_and_exploit_triage(self):
         findings = self.sample()

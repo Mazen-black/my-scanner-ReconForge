@@ -468,6 +468,27 @@ class ExploitIntelligenceTests(unittest.TestCase):
                          ["CVE-2024-12345"])
         self.assertEqual(result[0]["execution_status"], "not_executed")
 
+    def test_cve_correlation_distinguishes_title_source_and_duplicate_evidence(self):
+        result = build_exploit_intelligence([{
+            "id": "126",
+            "title": "Generic product issue",
+            "cve": "CVE-2024-12345",
+        }, {
+            "id": "126",
+            "title": "Generic product issue CVE-2024-54321",
+        }], [
+            {"id": "CVE-2024-12345"},
+            {"id": "CVE-2024-54321"},
+        ])[0]
+        correlation = result["cve_correlation"]
+        self.assertEqual(correlation["explicit_cve_ids_in_title"], [])
+        self.assertEqual(correlation["explicit_cve_ids_in_source_fields"], ["CVE-2024-12345"])
+        self.assertEqual(correlation["explicit_cve_ids_in_duplicate_observations"], ["CVE-2024-54321"])
+        self.assertEqual(correlation["matched_scanner_cve_ids"], ["CVE-2024-12345", "CVE-2024-54321"])
+        self.assertEqual(correlation["link_basis"], ["source_fields", "duplicate_observations"])
+        self.assertEqual(correlation["link_confidence"], "high_for_identifier_link_only")
+        self.assertEqual(result["triage"]["exploitability_confidence"], "unknown")
+
     def test_does_not_invent_cve_correlation(self):
         result = build_exploit_intelligence(
             [{"id": "123", "title": "Example exploit"}],
@@ -527,7 +548,7 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
         self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_title"], [])
-        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_source_fields"], ["CVE-2024-12345"])
+        self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_duplicate_observations"], ["CVE-2024-12345"])
 
     def test_missing_exploit_ids_and_titles_are_not_collapsed_together(self):
         result = build_exploit_intelligence([
@@ -578,7 +599,7 @@ class ExploitIntelligenceTests(unittest.TestCase):
             {"id": "101", "title": "Generic product issue", "cve_ids": ["CVE-2024-12345", "not-a-cve"]}
         ], [{"id": "CVE-2024-12345"}])[0]
         self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
-        self.assertEqual(result["cve_correlation"]["link_basis"], "explicit_cve_identifier_in_source_fields")
+        self.assertEqual(result["cve_correlation"]["link_basis"], ["source_fields"])
 
     def test_duplicate_cve_records_are_not_counted_twice(self):
         result = build_exploit_intelligence([
