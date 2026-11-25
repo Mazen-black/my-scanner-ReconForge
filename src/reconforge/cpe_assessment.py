@@ -109,27 +109,31 @@ def _version_match(match, detected_version):
         (match.get("versionEndIncluding"), "<="),
         (match.get("versionEndExcluding"), "<"),
     ]
-    if criteria_version not in ("*", "-", ""):
+    has_exact_version = criteria_version not in ("*", "-", "")
+    has_bounds = any(value for value, _ in bounds)
+    if not has_exact_version and not has_bounds:
+        return None, None, f"{criteria}: wildcard version without explicit version bounds"
+
+    if has_exact_version:
         cmp = _compare_versions(detected_version, criteria_version)
         if cmp is None:
             if detected_version != criteria_version:
                 return None, None, f"{criteria}: version format is not safely comparable"
         elif cmp != 0:
             return False, None, None
-        reason = "exact_version"
-    else:
-        if not any(value for value, _ in bounds):
-            return None, None, f"{criteria}: wildcard version without explicit version bounds"
-        for bound, op in bounds:
-            if not bound:
-                continue
-            cmp = _compare_versions(detected_version, bound)
-            if cmp is None:
-                return None, None, f"{criteria}: version bounds cannot be compared safely"
-            if ((op == ">=" and cmp < 0) or (op == ">" and cmp <= 0)
-                    or (op == "<=" and cmp > 0) or (op == "<" and cmp >= 0)):
-                return False, None, None
-        reason = "version_range_match"
+
+    # NVD range fields are additional constraints, not alternatives to an
+    # explicit CPE version. Evaluate every supplied boundary in either case.
+    for bound, op in bounds:
+        if not bound:
+            continue
+        cmp = _compare_versions(detected_version, bound)
+        if cmp is None:
+            return None, None, f"{criteria}: version bounds cannot be compared safely"
+        if ((op == ">=" and cmp < 0) or (op == ">" and cmp <= 0)
+                or (op == "<=" and cmp > 0) or (op == "<" and cmp >= 0)):
+            return False, None, None
+    reason = "exact_version" if has_exact_version else "version_range_match"
     evidence = {
         "criteria": criteria,
         "reason": reason,

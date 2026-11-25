@@ -104,6 +104,24 @@ class CVEApplicabilityTests(unittest.TestCase):
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
 
+    def test_exact_cpe_version_must_also_satisfy_exclusive_upper_bound(self):
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+            versionEndExcluding="2.4.57",
+        ))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
+
+    def test_exact_cpe_version_can_satisfy_additional_inclusive_bounds(self):
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:2.4.57:*:*:*:*:*:*:*",
+            versionStartIncluding="2.4.0",
+            versionEndIncluding="2.4.57",
+        ))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
+        self.assertEqual(result["status"], "version_match")
+        self.assertEqual(result["evidence"][0]["reason"], "exact_version")
+
     def test_semver_prerelease_exact_text_is_not_promoted_to_match(self):
         cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.58-rc1:*:*:*:*:*:*:*"))
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.58-rc1")
