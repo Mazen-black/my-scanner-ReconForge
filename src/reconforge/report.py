@@ -2,6 +2,7 @@
 import argparse
 import html
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,8 +14,18 @@ def _e(value, default="—"):
     return html.escape(str(value), quote=True)
 
 
+def _valid_cvss(score):
+    """Accept only finite CVSS base scores in the standardized 0–10 range."""
+    return (
+        isinstance(score, (int, float))
+        and not isinstance(score, bool)
+        and math.isfinite(score)
+        and 0 <= score <= 10
+    )
+
+
 def _severity(score):
-    if not isinstance(score, (int, float)):
+    if not _valid_cvss(score):
         return "Unknown"
     if score == 0:
         return "None"
@@ -29,7 +40,7 @@ def _severity(score):
 
 def _score_sort(cve):
     score = cve.get("cvss")
-    return score if isinstance(score, (int, float)) else -1
+    return score if _valid_cvss(score) else -1
 
 
 def _cve_rows(cves):
@@ -49,7 +60,7 @@ def _cve_rows(cves):
             "Critical": "critical", "High": "high", "Medium": "medium",
             "Low": "low", "Informational": "none",
         }.get(priority_level, "unknown")
-        score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        score_text = f"{score:.1f}" if _valid_cvss(score) else "N/A"
         priority_score = priority.get("priority_score")
         priority_text = f"{priority_score:.1f}" if isinstance(priority_score, (int, float)) else "N/A"
         contextual = applicability.get("contextual_constraint") or {}
@@ -82,7 +93,7 @@ def _risk_rows(results):
         score = risk.get("score")
         level = risk.get("level", "Unscored")
         css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(level, "unknown")
-        score_text = f"{score:.1f}" if isinstance(score, (int, float)) else "N/A"
+        score_text = f"{score:.1f}" if _valid_cvss(score) else "N/A"
         context = risk.get("asset_context") or {}
         context_score = context.get("contextual_priority_score")
         context_text = f"{context_score:.1f}" if isinstance(context_score, (int, float)) else "N/A"

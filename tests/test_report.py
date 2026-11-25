@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from report import main as report_main, render_html_report, write_html_report
@@ -205,6 +206,17 @@ class HTMLReportTests(unittest.TestCase):
         self.assertNotIn("<img src=x onerror=alert(1)>", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertIn("&lt;img", html)
+
+    def test_invalid_cvss_values_are_not_rendered_as_severity_or_scores(self):
+        for invalid_score in (True, False, -0.1, 10.1, float("nan"), float("inf")):
+            with self.subTest(cvss=invalid_score):
+                findings = self.sample()
+                findings[0]["cve_assessment"][0]["cvss"] = invalid_score
+                findings[0]["cve_assessment"][0].pop("severity", None)
+                html = render_html_report(findings)
+                self.assertIn('class="severity unknown">Unknown</span>', html)
+                self.assertIn('<td class="numeric">N/A</td>', html)
+                self.assertIn('<div class="muted">High / Critical CVEs</div><div class="metric">0</div>', html)
 
     def test_empty_report_has_helpful_placeholders(self):
         html = render_html_report([], target="empty-lab")
