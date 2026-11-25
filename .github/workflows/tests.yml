@@ -35,3 +35,20 @@ jobs:
 
       - name: Run test suite
         run: python -m unittest discover -s tests -v
+  debian-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Build Debian package
+        run: ./packaging/build-deb.sh
+
+      - name: Validate Debian package metadata
+        run: |
+          package=$(find dist -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$package"
+          test "$(dpkg-deb --field "$package" Package)" = "reconforge"
+          test "$(dpkg-deb --field "$package" Architecture)" = "all"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package"
