@@ -72,6 +72,14 @@ def _has_vendor_revision(value):
     return any(re.search(pattern, text) for pattern in markers)
 
 
+def _has_semver_suffix(value):
+    """Identify prerelease/build metadata that numeric dotted comparison cannot order."""
+    text = (value or "").strip()
+    return bool(re.fullmatch(
+        r"v?\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+|\+[0-9A-Za-z.-]+)", text
+    ))
+
+
 def _compare_versions(left, right):
     a, b = _version_tuple(left), _version_tuple(right)
     if a is None or b is None:
@@ -90,6 +98,11 @@ def _version_match(match, detected_version):
     # distro may backport a fix without changing the upstream version component.
     if _has_vendor_revision(detected_version) or _has_vendor_revision(criteria_version):
         return None, None, f"{criteria}: vendor/distribution package revision may contain backported fixes and is not verified"
+    if _has_semver_suffix(detected_version) or _has_semver_suffix(criteria_version) or any(
+        _has_semver_suffix(match.get(key))
+        for key in ("versionStartIncluding", "versionStartExcluding", "versionEndIncluding", "versionEndExcluding")
+    ):
+        return None, None, f"{criteria}: prerelease/build metadata requires scheme-aware version comparison and is not verified"
     bounds = [
         (match.get("versionStartIncluding"), ">="),
         (match.get("versionStartExcluding"), ">"),

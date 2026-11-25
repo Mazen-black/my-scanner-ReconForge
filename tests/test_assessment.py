@@ -104,6 +104,27 @@ class CVEApplicabilityTests(unittest.TestCase):
         result = assess_cve_applicability(cve, "apache", "http_server", "2.4.57")
         self.assertEqual(result["status"], "not_matched_by_nvd_cpe")
 
+    def test_semver_prerelease_exact_text_is_not_promoted_to_match(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.58-rc1:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.58-rc1")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("prerelease/build metadata" in item for item in result["evidence_gaps"]))
+
+    def test_semver_build_metadata_is_not_silently_discarded(self):
+        cve = self._cve(self._match("cpe:2.3:a:apache:http_server:2.4.58:*:*:*:*:*:*:*"))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.58+vendor.3")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("prerelease/build metadata" in item for item in result["evidence_gaps"]))
+
+    def test_semver_prerelease_range_boundary_is_not_compared_as_release(self):
+        cve = self._cve(self._match(
+            "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+            versionStartIncluding="2.4.58-rc1", versionEndExcluding="2.5.0"
+        ))
+        result = assess_cve_applicability(cve, "apache", "http_server", "2.4.58")
+        self.assertEqual(result["status"], "candidate_unverified")
+        self.assertTrue(any("prerelease/build metadata" in item for item in result["evidence_gaps"]))
+
     def test_inclusive_version_range(self):
         cve = self._cve(self._match(
             "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
