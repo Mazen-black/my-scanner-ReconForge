@@ -31,6 +31,7 @@ import requests
 import nmap
 
 from .asset_context import assess_asset_context
+from .confidence import build_evidence_confidence
 from .remediation import build_remediation
 from .report import write_html_report
 from .summary import summarize_findings
@@ -375,6 +376,10 @@ def main():
                 print(f"  Web intelligence: {web_intelligence.get('status')}")
 
             # Keep technical risk, operator-supplied asset context, and remediation separate.
+            service_fingerprint = build_technology_fingerprint(port_data)
+            evidence_confidence = build_evidence_confidence(
+                service_fingerprint, cves, exploits, exploit_intelligence
+            )
             entry = build_report_entry(
                 host=host,
                 port=port,
@@ -385,13 +390,14 @@ def main():
                 cpes_tested=cpes_tried,
                 cves=cves,
                 exploits=exploits,
-                fingerprint=build_technology_fingerprint(port_data),
+                fingerprint=service_fingerprint,
                 http_assessment=http_assessment,
                 web_intelligence=web_intelligence,
                 network_exposure=assess_network_exposure(port, service, product),
                 exploit_intelligence=exploit_intelligence,
                 host_os_fingerprint=os_fingerprint,
             )
+            entry["evidence_confidence"] = evidence_confidence
             technical_risk = assess_service_risk(cves, exploits)
             asset_context = assess_asset_context(
                 technical_risk, args.asset_criticality, args.exposure

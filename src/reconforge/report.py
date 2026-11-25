@@ -100,6 +100,34 @@ def _cve_rows(cves):
     return "".join(rows) or '<tr><td colspan="6" class="empty">No CVE results recorded.</td></tr>'
 
 
+def _evidence_confidence_sections(results):
+    sections = []
+    for item in results or []:
+        confidence = item.get("evidence_confidence") or {}
+        if not confidence:
+            continue
+        identity = confidence.get("service_identity") or {}
+        applicability = confidence.get("cve_applicability") or {}
+        linkage = confidence.get("exploit_reference_linkage") or {}
+        counts = applicability.get("counts") or {}
+        reasons = confidence.get("overall_reasons") or []
+        gaps = confidence.get("overall_evidence_gaps") or []
+        sections.append(
+            '<tr>'
+            f'<td>{_e(item.get("host"))}:{_e(item.get("port"))} / {_e((item.get("service") or {}).get("product"))}</td>'
+            f'<td>{_e(identity.get("confidence", "unknown"))}<div class="muted">Nmap: {_e(identity.get("nmap_method"))}; score: {_e(identity.get("nmap_confidence"))}</div>'
+            f'<div class="muted">{_e("; ".join(identity.get("reasons") or []))}</div></td>'
+            f'<td>{_e(applicability.get("confidence", "unknown"))}<div class="muted">Matches: {_e(counts.get("version_match", 0))}; unverified: {_e(counts.get("candidate_unverified", 0))}; not matched: {_e(counts.get("not_matched_by_nvd_cpe", 0))}</div>'
+            f'<div class="muted">{_e("; ".join(applicability.get("reasons") or []))}</div></td>'
+            f'<td>{_e(linkage.get("confidence", "unknown"))}<div class="muted">Explicit CVE links: {_e(linkage.get("explicit_cve_links", 0))} / references: {_e(linkage.get("exploit_references", 0))}</div>'
+            f'<div class="muted">{_e("; ".join(linkage.get("reasons") or []))}</div></td>'
+            f'<td>{_e(confidence.get("overall_review_confidence", "unknown"))}<div class="muted">Exploitability: {_e(confidence.get("exploitability_confidence", "unknown"))}</div>'
+            f'<div class="muted">{_e("; ".join(reasons))}</div><div class="muted">Gaps: {_e("; ".join(gaps))}</div></td>'
+            '</tr>'
+        )
+    return "".join(sections) or '<tr><td colspan="5" class="empty">No consolidated evidence-confidence records available.</td></tr>'
+
+
 def _risk_rows(results):
     rows = []
     for item in results or []:
@@ -388,6 +416,9 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <p class="muted">OS detection is opt-in. A broad platform family is accepted only when Nmap's match accuracy meets the configured threshold (90% by default). Nmap accuracy is a matching score, not a calibrated probability, and does not establish CPU architecture or vulnerability applicability.</p>
 <div class="table-wrap"><table><thead><tr><th>Host</th><th>Nmap OS match</th><th>Platform family</th><th>Match accuracy</th><th>Acceptance threshold</th><th>Status</th></tr></thead>
 <tbody>{_os_fingerprint_rows(results, host_os_fingerprints)}</tbody></table></div></section>
+<section><h2>Consolidated Evidence Confidence</h2><p class="muted">Confidence grades describe the strength of evidence linkage, not the probability that a host is vulnerable. Exploitability remains unknown unless independently validated.</p>
+<div class="table-wrap"><table><thead><tr><th>Service</th><th>Service identity</th><th>CVE applicability</th><th>Exploit reference linkage</th><th>Overall review confidence</th></tr></thead>
+<tbody>{_evidence_confidence_sections(results)}</tbody></table></div></section>
 <section><h2>Risk Prioritization</h2><p class="muted">Technical priority uses the highest CVE review-priority score. Contextual priority adjusts it only with explicitly supplied asset criticality and exposure. Unknown context is neutral. Neither score is CVSS or proof of exploitability.</p>
 <div class="table-wrap"><table><thead><tr><th>Port / Service</th><th>Product / Version</th><th>Technical priority</th><th>Technical score</th><th>Contextual priority</th><th>Asset / Exposure</th><th>Top CVE</th><th>EDB refs</th></tr></thead>
 <tbody>{_risk_rows(results)}</tbody></table></div></section>

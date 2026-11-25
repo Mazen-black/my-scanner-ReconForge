@@ -425,6 +425,24 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Duplicate search observations: 1", html)
         self.assertIn("Conflicting metadata fields: local_metadata", html)
 
+    def test_report_renders_consolidated_evidence_confidence(self):
+        findings = self.sample()
+        findings[0]["evidence_confidence"] = {
+            "service_identity": {"confidence": "high", "nmap_method": "probed", "nmap_confidence": 10,
+                                 "reasons": ["Active Nmap probe." ]},
+            "cve_applicability": {"confidence": "medium", "counts": {"version_match": 1, "candidate_unverified": 2,
+                                     "not_matched_by_nvd_cpe": 0}, "reasons": ["One path matched."]},
+            "exploit_reference_linkage": {"confidence": "high_for_identifier_link_only", "explicit_cve_links": 1,
+                                          "exploit_references": 2, "reasons": ["Explicit identifier link."]},
+            "overall_review_confidence": "medium", "exploitability_confidence": "unknown",
+            "overall_reasons": ["Evidence linked."], "overall_evidence_gaps": ["Build provenance unknown."],
+        }
+        html = render_html_report(findings)
+        self.assertIn("Consolidated Evidence Confidence", html)
+        self.assertIn("high_for_identifier_link_only", html)
+        self.assertIn("Build provenance unknown.", html)
+        self.assertIn("Exploitability: unknown", html)
+
     def test_report_renders_confidence_reasons_and_evidence_gaps(self):
         findings = self.sample()
         findings[0]["cve_assessment"][0]["applicability"].update({
