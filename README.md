@@ -183,6 +183,10 @@ reconforge --help
 
 Replace `192.0.2.10` with a lab target or another system you are authorized to scan. The address above is reserved for documentation examples.
 
+## Sample lab evidence
+
+The [`evidence/`](evidence/) directory contains a reproducible, authorized Metasploitable 2 lab scan: the raw JSON report and the standalone HTML dashboard generated from the same run. The evidence README records the scan scope and clearly notes that NVD lookups were disabled for this eight-port run; SearchSploit references are leads for manual review, not confirmed vulnerabilities.
+
 ## Tests
 
 The test suite is designed to run without scanning a live target or making live NVD requests:
@@ -216,7 +220,7 @@ Reports may contain target addresses, port/service information, software version
 - NVD search results are candidates, not confirmed vulnerabilities.
 - Version comparison is not guaranteed to model every vendor-specific version scheme. Ambiguous distro/build suffixes are intentionally left unverified because they may encode security backports; constrained CPE attributes not identified by the service scan are also left unverified.
 - The scanner has a conservative evaluator for common NVD configuration-tree logic, but it only knows the detected service inventory. Multi-component requirements may therefore remain `candidate_unverified` until the full host inventory is available.
-- Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Exploit intelligence correlates CVEs only when an explicit CVE identifier appears in the title; absence of a link does not mean the exploit is unrelated. EDB references are not proof of applicability, and ReconForge does not download or execute exploit code.
+- Searchsploit classification is title/token based and may miss relevant results or retain imperfect matches. Exploit intelligence correlates CVEs only when an explicit CVE identifier appears in a title, structured source field, or duplicate observation; absence of a link does not mean the exploit is unrelated. EDB references are not proof of applicability, and ReconForge does not download or execute exploit code.
 - The HTTP assessment checks only a single HEAD response from `/`; it does not crawl pages, inspect JavaScript, test forms, or validate application behavior.
 - Web technology labels are heuristic, based on visible metadata and asset URL patterns; versions can be missing or spoofed. The scanner does not download JavaScript, crawl the application, or verify technology runtime state.
 - Known-port exposure rules are heuristic. Services may use non-standard ports, and a port number does not conclusively identify the running service.
