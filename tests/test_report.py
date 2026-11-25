@@ -413,13 +413,17 @@ class HTMLReportTests(unittest.TestCase):
                 "matched_scanner_cve_ids": ["CVE-2099-0001"],
                 "link_confidence": "high_for_identifier_link_only",
                 "related_exploit_db_ids": ["200", "300"],
-                "duplicate_observations": [{"title": "alternate title"}],
+                "duplicate_observations": [{
+                    "title": "alternate title",
+                    "metadata_variants": {"local_metadata": {"architecture": "x86_64"}},
+                }],
             },
         }]
         html = render_html_report(findings)
         self.assertIn("Explicit-ID link confidence: high_for_identifier_link_only", html)
         self.assertIn("Related EDB references: 200, 300", html)
         self.assertIn("Duplicate search observations: 1", html)
+        self.assertIn("Conflicting metadata fields: local_metadata", html)
 
     def test_report_renders_confidence_reasons_and_evidence_gaps(self):
         findings = self.sample()

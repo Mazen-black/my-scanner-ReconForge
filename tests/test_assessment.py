@@ -484,6 +484,38 @@ class ExploitIntelligenceTests(unittest.TestCase):
         self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_title"], [])
         self.assertEqual(result[0]["cve_correlation"]["explicit_cve_ids_in_source_fields"], ["CVE-2024-12345"])
 
+    def test_missing_exploit_ids_and_titles_are_not_collapsed_together(self):
+        result = build_exploit_intelligence([
+            {"platform": "linux"}, {"platform": "linux"}, {"id": "bad/id"},
+        ], [])
+        self.assertEqual(len(result), 3)
+        self.assertTrue(all(item["reference"]["id"] is None for item in result))
+
+    def test_duplicate_exploit_hit_merges_missing_metadata_and_preserves_conflicts(self):
+        result = build_exploit_intelligence([
+            {"id": "12347", "title": "Example issue", "local_metadata": {}},
+            {"id": "12347", "title": "Example issue alternate", "local_metadata": {
+                "required_privileges": "user", "architecture": "x86"}},
+            {"id": "12347", "title": "Example issue third", "local_metadata": {
+                "required_privileges": "root", "architecture": "x86_64"}},
+        ], [])[0]
+        evidence = result["applicability_evidence"]
+        self.assertEqual(evidence["documented_requirements"]["required_privileges"], "user")
+        self.assertEqual(evidence["architecture_metadata"], "x86")
+        observations = result["cve_correlation"]["duplicate_observations"]
+        self.assertEqual(observations[1]["metadata_variants"]["local_metadata"]["required_privileges"], "root")
+        self.assertEqual(len(observations), 2)
+
+    def test_malformed_nested_exploit_and_cve_metadata_is_handled_safely(self):
+        result = build_exploit_intelligence([
+            {"id": "12348", "title": "Example CVE-2024-12345",
+             "assessment": "not-a-mapping", "local_metadata": ["bad"],
+             "normalized_metadata": "bad", "platform": {"unexpected": True}},
+        ], [{"id": "CVE-2024-12345", "applicability": "bad"}])[0]
+        self.assertEqual(result["cve_correlation"]["matched_scanner_cve_ids"], ["CVE-2024-12345"])
+        self.assertEqual(result["cve_correlation"]["matched_cve_applicability"][0]["applicability_status"], "candidate_unverified")
+        self.assertEqual(result["applicability_evidence"]["requirements_assessment"], "unknown_not_documented_in_local_metadata")
+
     def test_multiple_exploit_references_share_only_explicit_cve_links(self):
         result = build_exploit_intelligence([
             {"id": "100", "title": "Example CVE-2024-12345 exploit"},

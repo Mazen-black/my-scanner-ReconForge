@@ -187,6 +187,7 @@ def _exploit_rows(exploits, intelligence_by_id=None):
             + (f'<div class="muted">Explicit-ID link confidence: {_e(correlation.get("link_confidence"))}</div>' if correlation.get("link_confidence") else '')
             + (f'<div class="muted">Related EDB references: {_e(", ".join(correlation.get("related_exploit_db_ids") or []))}</div>' if correlation.get("related_exploit_db_ids") else '')
             + (f'<div class="muted">Duplicate search observations: {len(correlation.get("duplicate_observations") or [])}</div>' if correlation.get("duplicate_observations") else '')
+            + (f'<div class="muted">Conflicting metadata fields: {_e(", ".join(sorted({field for observation in correlation.get("duplicate_observations") or [] if isinstance(observation, dict) for field in (observation.get("metadata_variants") or {})})) )}</div>' if any(isinstance(observation, dict) and observation.get("metadata_variants") for observation in correlation.get("duplicate_observations") or []) else '')
             + '</td>'
             '</tr>'
         )

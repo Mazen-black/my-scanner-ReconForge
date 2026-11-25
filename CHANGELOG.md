@@ -2,6 +2,7 @@
 
 ## 0.10.10 - 2026-11-25
 
+- Harden Exploit-DB deduplication so unidentified rows are not merged, merge missing duplicate metadata while retaining conflicting variants, and safely handle malformed nested correlation metadata; expose metadata conflicts in the dashboard.
 - Make risk scoring formulas and applicability/context factors explicit; reject non-finite or malformed scores and safely ignore malformed CVE/exploit entries. Dashboard now exposes the factors behind technical and contextual priorities.
 - Attach host, port, detected service/product/version, NVD applicability criteria, confidence reasons, and evidence gaps to remediation guidance; render escaped provenance in the HTML dashboard. Unknown applicability states are downgraded to unverified.
 - Validate NVD CVSS scores at ingestion; reject booleans, non-finite values, non-numeric values, and scores outside the 0–10 range before risk assessment.
