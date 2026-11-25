@@ -2,6 +2,10 @@
 
 ## 0.10.10 - 2026-11-25
 
+- Validate report schema versions and reject unsupported future major/minor versions while preserving legacy list and unversioned-envelope compatibility.
+- Derive displayed CVSS severity from validated 0–10 scores instead of trusting potentially inconsistent labels.
+- Handle malformed/unreadable JSON with a concise CLI error and preserve 0–100 risk-priority score rendering.
+- Validate CVSS values before rendering; booleans, out-of-range values, NaN, and infinity remain Unknown/N/A.
 - Expand GitHub Actions validation across Python 3.10, 3.11, 3.12, and 3.13.
 - Compile the scanner, assessment, reporting, risk, asset-context, and remediation modules in CI before running tests.
 

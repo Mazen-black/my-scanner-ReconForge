@@ -3,6 +3,7 @@ import argparse
 import html
 import json
 import math
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,14 +15,21 @@ def _e(value, default="—"):
     return html.escape(str(value), quote=True)
 
 
+def _valid_finite_number(value, minimum=None, maximum=None):
+    """Reject booleans, non-numeric values, and non-finite numbers."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        if not math.isfinite(value):
+            return False
+    except OverflowError:
+        return False
+    return (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
+
+
 def _valid_cvss(score):
     """Accept only finite CVSS base scores in the standardized 0–10 range."""
-    return (
-        isinstance(score, (int, float))
-        and not isinstance(score, bool)
-        and math.isfinite(score)
-        and 0 <= score <= 10
-    )
+    return _valid_finite_number(score, 0, 10)
 
 
 def _severity(score):
@@ -47,7 +55,9 @@ def _cve_rows(cves):
     rows = []
     for cve in sorted(cves or [], key=_score_sort, reverse=True):
         score = cve.get("cvss")
-        severity = str(cve.get("severity")).title() if cve.get("severity") else _severity(score)
+        # A supplied severity label must not override a valid CVSS base score.
+        # Invalid/missing scores remain Unknown rather than trusting stale labels.
+        severity = _severity(score)
         applicability = cve.get("applicability") or {}
         status = applicability.get("status", "candidate_unverified")
         priority = cve.get("risk_priority") or {}
@@ -62,7 +72,7 @@ def _cve_rows(cves):
         }.get(priority_level, "unknown")
         score_text = f"{score:.1f}" if _valid_cvss(score) else "N/A"
         priority_score = priority.get("priority_score")
-        priority_text = f"{priority_score:.1f}" if isinstance(priority_score, (int, float)) else "N/A"
+        priority_text = f"{priority_score:.1f}" if _valid_finite_number(priority_score, 0, 100) else "N/A"
         contextual = applicability.get("contextual_constraint") or {}
         summary = str(cve.get("summary") or "")
         if contextual.get("condition"):
@@ -93,10 +103,10 @@ def _risk_rows(results):
         score = risk.get("score")
         level = risk.get("level", "Unscored")
         css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(level, "unknown")
-        score_text = f"{score:.1f}" if _valid_cvss(score) else "N/A"
+        score_text = f"{score:.1f}" if _valid_finite_number(score, 0, 100) else "N/A"
         context = risk.get("asset_context") or {}
         context_score = context.get("contextual_priority_score")
-        context_text = f"{context_score:.1f}" if isinstance(context_score, (int, float)) else "N/A"
+        context_text = f"{context_score:.1f}" if _valid_finite_number(context_score, 0, 100) else "N/A"
         context_level = context.get("contextual_priority", "Unscored")
         context_css = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}.get(context_level, "unknown")
         service = item.get("service") or {}
@@ -395,9 +405,23 @@ def main():
     parser.add_argument("--target", default=None, help="Target label shown in the report")
     args = parser.parse_args()
     source = Path(args.input)
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        parser.error(f"Unable to read valid JSON report: {exc}")
     if isinstance(payload, dict):
         # Current ReconForge JSON uses a versioned envelope; older releases wrote a list.
+        schema_version = payload.get("schema_version")
+        if schema_version is not None:
+            match = re.fullmatch(r"(\d+)\.(\d+)", str(schema_version))
+            if not match:
+                parser.error("Report schema_version must use MAJOR.MINOR format.")
+            major, minor = map(int, match.groups())
+            if major != 1 or minor > 15:
+                parser.error(
+                    f"Unsupported report schema version {schema_version!r}; "
+                    "this version supports schema 1.0 through 1.15."
+                )
         results = payload.get("findings")
         metadata = payload.get("metadata") or {}
         if not isinstance(metadata, dict):

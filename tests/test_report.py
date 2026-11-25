@@ -80,6 +80,19 @@ class HTMLReportTests(unittest.TestCase):
         html = render_html_report(self.sample())
         self.assertIn("No host OS fingerprint data recorded.", html)
 
+    def test_report_preserves_risk_scores_on_zero_to_one_hundred_scale(self):
+        findings = self.sample()
+        findings[0]["risk_assessment"] = {
+            "score": 57.2, "level": "Medium", "top_cve": "CVE-2099-0001",
+            "asset_context": {"contextual_priority_score": 64.5, "contextual_priority": "Medium"},
+        }
+        findings[0]["cve_assessment"][0]["risk_priority"] = {
+            "priority": "Medium", "priority_score": 57.2,
+        }
+        html = render_html_report(findings)
+        self.assertIn('<td class="numeric">57.2</td>', html)
+        self.assertIn('(64.5)', html)
+
     def test_report_renders_risk_and_remediation_guidance(self):
         findings = self.sample()
         findings[0]["risk_assessment"] = {
@@ -208,7 +221,7 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("&lt;img", html)
 
     def test_invalid_cvss_values_are_not_rendered_as_severity_or_scores(self):
-        for invalid_score in (True, False, -0.1, 10.1, float("nan"), float("inf")):
+        for invalid_score in (True, False, -0.1, 10.1, float("nan"), float("inf"), 10 ** 10000):
             with self.subTest(cvss=invalid_score):
                 findings = self.sample()
                 findings[0]["cve_assessment"][0]["cvss"] = invalid_score
@@ -267,6 +280,43 @@ class HTMLReportTests(unittest.TestCase):
             self.assertIn("98%", html)
             self.assertIn("Hosts with accepted OS match", html)
             self.assertIn(">1</div>", html)
+
+    def test_report_uses_cvss_score_not_inconsistent_severity_label(self):
+        findings = self.sample()
+        findings[0]["cve_assessment"][0]["cvss"] = 9.8
+        findings[0]["cve_assessment"][0]["severity"] = "LOW"
+        html = render_html_report(findings)
+        self.assertIn('<span class="severity critical">Critical</span>', html)
+        self.assertNotIn('<span class="severity low">Low</span>', html)
+
+    def test_cli_rejects_malformed_or_unsupported_schema_versions(self):
+        invalid_versions = ("latest", "1", "2.0", "1.16", "1.x")
+        for version in invalid_versions:
+            with self.subTest(schema_version=version), tempfile.TemporaryDirectory() as temp_dir:
+                source = Path(temp_dir) / "future.json"
+                source.write_text(json.dumps({"schema_version": version, "metadata": {}, "findings": []}), encoding="utf-8")
+                with unittest.mock.patch.object(sys, "argv", ["report.py", str(source)]):
+                    with self.assertRaises(SystemExit) as raised:
+                        report_main()
+                self.assertEqual(raised.exception.code, 2)
+
+    def test_cli_accepts_legacy_envelope_without_schema_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "legacy-envelope.json"
+            output = Path(temp_dir) / "legacy-envelope.html"
+            source.write_text(json.dumps({"metadata": {"requested_target": "old.local"}, "findings": []}), encoding="utf-8")
+            with unittest.mock.patch.object(sys, "argv", ["report.py", str(source), "--output", str(output)]):
+                report_main()
+            self.assertIn("old.local", output.read_text(encoding="utf-8"))
+
+    def test_cli_reports_malformed_json_without_traceback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "broken.json"
+            source.write_text('{"schema_version":', encoding="utf-8")
+            with unittest.mock.patch.object(sys, "argv", ["report.py", str(source)]):
+                with self.assertRaises(SystemExit) as raised:
+                    report_main()
+            self.assertEqual(raised.exception.code, 2)
 
     def test_cli_rejects_non_object_metadata_in_report_envelope(self):
         with tempfile.TemporaryDirectory() as temp_dir:

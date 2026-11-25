@@ -26,7 +26,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Calculates a separate technical review-priority score from CVSS and NVD applicability evidence; exploit references do not increase the numeric score.
 - Adjusts contextual review priority only from explicitly operator-supplied asset criticality and exposure; unknown context is neutral and open ports never imply internet reachability.
 - Adds service-specific and CVE-aware remediation guidance with verification steps; it never executes remediation or invents fixed versions.
-- Generates a standalone HTML dashboard with escaped untrusted values, and can render both current versioned JSON envelopes and legacy list reports.
+- Generates a standalone HTML dashboard with escaped untrusted values, and can render schema 1.0–1.15 envelopes, older unversioned envelopes, and legacy list reports. Newer/unknown schema versions and malformed JSON are rejected with a clear CLI error rather than silently misinterpreted.
 - Supports `--no-nvd` for offline operation when NVD is unavailable.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Adds an evidence-confidence model that separates CVE applicability confidence from exploitability confidence, records evidence sources/reasons/gaps, and never treats CVSS severity or an Exploit-DB title match as proof of exploitability.
