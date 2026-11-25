@@ -23,12 +23,26 @@ class PackageTests(unittest.TestCase):
                 self.assertIs(legacy_module, package_module)
 
     def test_extracted_modules_are_importable(self):
-        from reconforge import exploitdb, nvd, targeting, web_probe
+        from reconforge import (
+            cpe_assessment, exploit_assessment, exploitdb, nvd, targeting,
+            web_assessment, web_probe,
+        )
 
         self.assertTrue(callable(exploitdb.searchsploit_lookup))
         self.assertTrue(callable(nvd.check_cve_nvd))
         self.assertTrue(callable(targeting.validate_target))
         self.assertTrue(callable(web_probe.probe_http_metadata))
+        self.assertTrue(callable(cpe_assessment.assess_cve_applicability))
+        self.assertTrue(callable(exploit_assessment.build_exploit_intelligence))
+        self.assertTrue(callable(web_assessment.analyze_web_content))
+
+    def test_assessment_domains_are_split_and_facade_stays_compatible(self):
+        from reconforge import assessment, cpe_assessment, exploit_assessment, web_assessment
+
+        self.assertIs(assessment.assess_cve_applicability, cpe_assessment.assess_cve_applicability)
+        self.assertIs(assessment.build_exploit_intelligence, exploit_assessment.build_exploit_intelligence)
+        self.assertIs(assessment.analyze_http_security, web_assessment.analyze_http_security)
+        self.assertTrue(callable(assessment.build_report_entry))
 
     def test_console_entry_points_are_importable(self):
         from reconforge.report import main as report_main
