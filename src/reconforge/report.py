@@ -202,6 +202,7 @@ def _remediation_sections(results):
                 f"<article class=\"remedy\"><h3>{_e(label)} — {_e(service_tip.get('title'))}</h3>"
                 f"<p><span class=\"severity medium\">{_e(service_tip.get('priority'))} suggested review</span> "
                 f"<span class=\"muted\">Confidence: {_e(service_tip.get('confidence'))}; {_e(service_tip.get('reason'))}</span></p>"
+                f'<p class="muted">Evidence: {_e(json.dumps(service_tip.get("evidence") or {}, ensure_ascii=False, sort_keys=True))}</p>'
                 f"<h4>Recommended actions</h4><ul>{actions}</ul><h4>How to verify</h4><ul>{checks}</ul></article>"
             )
         for cve_tip in guidance.get("cve_guidance", []):
@@ -211,6 +212,7 @@ def _remediation_sections(results):
                 f"<article class=\"remedy\"><h3>{_e(label)} — {_e(cve_tip.get('title'))}</h3>"
                 f"<p><span class=\"severity unknown\">{_e(cve_tip.get('priority'))}</span> "
                 f"<span class=\"muted\">Applicability: {_e(cve_tip.get('applicability'))}; confidence: {_e(cve_tip.get('confidence'))}</span></p>"
+                f'<p class="muted">Evidence: {_e(json.dumps(cve_tip.get("evidence") or {}, ensure_ascii=False, sort_keys=True))}</p>'
                 f"<h4>Recommended actions</h4><ul>{actions}</ul><h4>How to verify</h4><ul>{checks}</ul></article>"
             )
     return "".join(sections) or '<p class="muted">No remediation guidance generated. Confirm service identification and CVE metadata first.</p>'

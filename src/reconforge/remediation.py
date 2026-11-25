@@ -115,10 +115,20 @@ def _service_family(service_name):
     return None
 
 
-def build_remediation(service, cves=None, risk_assessment=None):
+def build_remediation(service, cves=None, risk_assessment=None, finding_context=None):
     """Build non-invasive, evidence-labelled guidance for one discovered service."""
     service = service or {}
     family = _service_family(service.get("name"))
+    context = finding_context if isinstance(finding_context, dict) else {}
+    service_evidence = {
+        "host": context.get("host"),
+        "port": context.get("port"),
+        "service_name": service.get("name"),
+        "product": service.get("product"),
+        "version": service.get("version"),
+        "identification_source": (context.get("identification_evidence") or {}).get("source", "Nmap service detection"),
+    }
+    service_evidence = {key: value for key, value in service_evidence.items() if value is not None}
     service_item = None
     if family:
         template = SERVICE_GUIDANCE[family]
@@ -131,16 +141,25 @@ def build_remediation(service, cves=None, risk_assessment=None):
             "actions": list(template["actions"]),
             "verification": list(template["verification"]),
             "confidence": "medium",
+            "evidence": service_evidence,
+            "limitations": [
+                "Service-family guidance is a heuristic based on the Nmap service label, not a verified configuration audit.",
+                "Confirm business dependencies and vendor guidance before changing the service.",
+            ],
         }
 
     cve_items = []
     for cve in cves or []:
+        if not isinstance(cve, dict):
+            continue
         applicability = cve.get("applicability") or {}
         priority = cve.get("risk_priority") or {}
         cve_id = cve.get("id") or "Unidentified CVE"
         status = applicability.get("status", "candidate_unverified")
         if status == "not_matched_by_nvd_cpe":
             continue
+        if status not in {"version_match", "candidate_unverified"}:
+            status = "candidate_unverified"
         actions = [
             "Retrieve the authoritative vendor advisory for this CVE and confirm the affected product, exact build, platform, and prerequisites.",
             "If the installed build is affected, plan an upgrade to the vendor-documented fixed release; ReconForge does not guess fixed version numbers.",
@@ -156,6 +175,25 @@ def build_remediation(service, cves=None, risk_assessment=None):
             "priority_score": priority.get("priority_score"),
             "confidence": "low" if status == "candidate_unverified" else "medium",
             "title": f"Validate and remediate {cve_id}",
+            "evidence": {
+                "host": context.get("host"),
+                "port": context.get("port"),
+                "service_name": service.get("name"),
+                "product": service.get("product"),
+                "detected_version": service.get("version"),
+                "cve_id": cve_id,
+                "cvss_base_score": cve.get("cvss"),
+                "severity": cve.get("severity"),
+                "nvd_source": cve.get("source"),
+                "applicability_status": status,
+                "matched_criteria": [
+                    entry.get("criteria") for entry in applicability.get("evidence", [])
+                    if isinstance(entry, dict) and entry.get("vulnerable") is True and entry.get("criteria")
+                ],
+                "evidence_sources": list(applicability.get("evidence_sources") or []),
+                "confidence_reasons": list(applicability.get("confidence_reasons") or []),
+                "evidence_gaps": list(applicability.get("evidence_gaps") or []),
+            },
             "actions": actions,
             "verification": [
                 "Confirm the vendor-reported fixed build is installed and the affected component is restarted if required.",
@@ -172,6 +210,12 @@ def build_remediation(service, cves=None, risk_assessment=None):
     return {
         "model": "ReconForge-RM1",
         "mode": "guidance_only",
+        "finding_context": {
+            "host": context.get("host"),
+            "port": context.get("port"),
+            "service": service_evidence,
+            "risk_assessment": risk_assessment if isinstance(risk_assessment, dict) else None,
+        },
         "service_guidance": service_item,
         "cve_guidance": cve_items,
         "notes": [

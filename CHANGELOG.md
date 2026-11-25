@@ -2,6 +2,7 @@
 
 ## 0.10.10 - 2026-11-25
 
+- Attach host, port, detected service/product/version, NVD applicability criteria, confidence reasons, and evidence gaps to remediation guidance; render escaped provenance in the HTML dashboard. Unknown applicability states are downgraded to unverified.
 - Validate NVD CVSS scores at ingestion; reject booleans, non-finite values, non-numeric values, and scores outside the 0–10 range before risk assessment.
 - Validate report schema versions and reject unsupported future major/minor versions while preserving legacy list and unversioned-envelope compatibility.
 - Derive displayed CVSS severity from validated 0–10 scores instead of trusting potentially inconsistent labels.

@@ -121,6 +121,30 @@ class HTMLReportTests(unittest.TestCase):
         self.assertIn("Restrict access to approved networks.", html)
         self.assertIn("Re-scan from the approved test network.", html)
 
+    def test_remediation_dashboard_renders_escaped_evidence_provenance(self):
+        findings = [{
+            "host": "192.0.2.10", "port": 80,
+            "service": {"name": "http", "product": "Apache", "version": "2.2.8"},
+            "remediation_guidance": {
+                "mode": "guidance_only",
+                "service_guidance": {
+                    "title": "Review web service", "priority": "medium", "confidence": "medium",
+                    "reason": "Service-family heuristic", "actions": [], "verification": [],
+                    "evidence": {"host": "192.0.2.10", "port": 80, "product": "<Apache>"},
+                },
+                "cve_guidance": [{
+                    "title": "Validate CVE-2099-4", "priority": "High", "applicability": "version_match",
+                    "confidence": "medium", "actions": [], "verification": [],
+                    "evidence": {"cve_id": "CVE-2099-4", "matched_criteria": ["cpe:2.3:a:vendor:product"]},
+                }],
+            },
+        }]
+        html = render_html_report(findings)
+        self.assertIn("192.0.2.10", html)
+        self.assertIn("CVE-2099-4", html)
+        self.assertIn("&lt;Apache&gt;", html)
+        self.assertNotIn('"product": "<Apache>"', html)
+
     def test_report_renders_explicit_exploit_metadata_values(self):
         findings = [{
             "host": "127.0.0.1", "port": 22,

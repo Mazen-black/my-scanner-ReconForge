@@ -351,6 +351,11 @@ class IntegratedAssessmentTests(unittest.TestCase):
         self.assertIsNone(captured["findings"][0]["risk_assessment"]["score"])
         self.assertEqual(captured["findings"][0]["risk_assessment"]["asset_context"]["asset_criticality"], "high")
         self.assertEqual(captured["findings"][0]["remediation_guidance"]["mode"], "guidance_only")
+        guidance = captured["findings"][0]["remediation_guidance"]
+        self.assertEqual(guidance["finding_context"]["host"], "127.0.0.1")
+        self.assertEqual(guidance["finding_context"]["port"], 21)
+        self.assertEqual(guidance["service_guidance"]["evidence"]["product"], "vsftpd")
+        self.assertEqual(guidance["service_guidance"]["evidence"]["version"], "3.0.5")
         mock_write_html.assert_called_once()
         self.assertEqual(mock_write_html.call_args.args[0][0]["port"], 21)
 

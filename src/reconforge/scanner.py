@@ -401,7 +401,12 @@ def main():
                 "asset_context": asset_context,
             }
             entry["remediation_guidance"] = build_remediation(
-                entry["service"], cves, entry["risk_assessment"]
+                entry["service"], cves, entry["risk_assessment"],
+                finding_context={
+                    "host": host,
+                    "port": port,
+                    "identification_evidence": entry.get("identification_evidence"),
+                },
             )
             results.append(entry)
             if technical_risk["score"] is None:
