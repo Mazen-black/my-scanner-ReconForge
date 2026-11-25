@@ -212,7 +212,7 @@ Reports use a versioned JSON envelope:
 - `risk_assessment` separates technical review priority from CVSS and includes an optional operator-contextual score.
 - `remediation_guidance` contains service/CVE guidance and verification steps in `guidance_only` mode; no changes are executed.
 
-Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports are intentionally excluded from version control by `.gitignore`.
+Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated reports are excluded from version control by default; the explicitly reviewed, bounded lab sample under `evidence/` is intentionally tracked as portfolio evidence.
 
 ## Limitations
 
