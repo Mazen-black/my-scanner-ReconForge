@@ -389,8 +389,15 @@ def check_cve_nvd(session, port_data, api_key, limiter, results_per_page, fetche
                 "limitations": ["This result came from keyword search, not a validated vulnerable CPE/version match.", "Check the vendor advisory and complete NVD version ranges manually."],
             }
         elif assessments:
+            # A definite mismatch for one candidate identity must not hide an
+            # unresolved assessment for another plausible identity. Only report
+            # not_matched when every evaluated identity is a definite mismatch.
+            selected = next(
+                (a for a in assessments if a.get("status") == "candidate_unverified"),
+                assessments[0],
+            )
             item["applicability"] = apply_contextual_cve_constraints(
-                item.get("id"), assessments[0], item.get("summary", "")
+                item.get("id"), selected, item.get("summary", "")
             )
         else:
             item["applicability"] = {

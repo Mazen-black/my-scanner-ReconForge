@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from reconforge import nvd
 
@@ -89,6 +89,42 @@ class NVDModuleTests(unittest.TestCase):
         self.assertGreaterEqual(len(cves[0]["query_evidence"]), 2)
         self.assertTrue(all(item["type"] == "cpe" for item in cves[0]["query_evidence"]))
         self.assertTrue(all(item["query"].startswith("cpe:2.3:a:apache:http_server:") for item in cves[0]["query_evidence"]))
+
+    def test_unresolved_identity_is_not_hidden_by_another_identity_mismatch(self):
+        response = {
+            "vulnerabilities": [{
+                "cve": {
+                    "id": "CVE-2099-0002",
+                    "metrics": {},
+                    "descriptions": [{"lang": "en", "value": "Synthetic test candidate"}],
+                    "configurations": [],
+                }
+            }]
+        }
+        fetcher = Mock(return_value=response)
+        assessments = [
+            {"status": "not_matched_by_nvd_cpe", "confidence": "low", "evidence": []},
+            {"status": "candidate_unverified", "confidence": "low", "evidence": []},
+        ]
+        with patch("reconforge.nvd.assess_cve_applicability", side_effect=assessments):
+            cves, _ = nvd.check_cve_nvd(
+                Mock(),
+                {
+                    "name": "http",
+                    "product": "Nginx",
+                    "version": "1.24.0",
+                    "cpe": [
+                        "cpe:/a:apache:http_server:1.24.0",
+                        "cpe:/a:f5:nginx:1.24.0",
+                    ],
+                },
+                None,
+                Mock(),
+                10,
+                fetcher=fetcher,
+            )
+        self.assertEqual(len(cves), 1)
+        self.assertEqual(cves[0]["applicability"]["status"], "candidate_unverified")
 
     def test_cvss_extraction_prefers_cvss_v31(self):
         cve = {
