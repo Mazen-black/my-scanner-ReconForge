@@ -56,6 +56,18 @@ class RiskScoringTests(unittest.TestCase):
         self.assertEqual(with_refs["exact_product_version_reference_count"], 1)
         self.assertFalse(with_refs["exploit_references_affect_score"])
 
+    def test_top_priority_exposes_cve_applicability_and_cvss_provenance(self):
+        summary = assess_service_risk([
+            {"id": "CVE-MATCH", "cvss": 5.0,
+             "applicability": {"status": "version_match"}},
+            {"id": "CVE-CANDIDATE", "cvss": 9.8,
+             "applicability": {"status": "candidate_unverified"}},
+        ], [])
+        self.assertEqual(summary["top_cve"], "CVE-CANDIDATE")
+        self.assertEqual(summary["top_cve_cvss_base_score"], 9.8)
+        self.assertEqual(summary["top_cve_applicability_status"], "candidate_unverified")
+        self.assertEqual(summary["top_cve_applicability_factor"], 0.65)
+
     def test_priority_formula_and_factor_explanation_are_explicit(self):
         result = score_cve({"cvss": 8.0, "applicability": {"status": "candidate_unverified"}})
         self.assertEqual(result["formula"], "CVSS base score × 10 × applicability factor")

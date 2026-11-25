@@ -119,6 +119,8 @@ class HTMLReportTests(unittest.TestCase):
         findings = self.sample()
         findings[0]["risk_assessment"] = {
             "score": 57.2, "level": "Medium", "top_cve": "CVE-2099-0001",
+            "top_cve_cvss_base_score": 8.8, "top_cve_applicability_status": "candidate_unverified",
+            "top_cve_applicability_factor": 0.65,
             "asset_context": {"contextual_priority_score": 64.5, "contextual_priority": "Medium"},
         }
         findings[0]["cve_assessment"][0]["risk_priority"] = {
@@ -127,6 +129,9 @@ class HTMLReportTests(unittest.TestCase):
         html = render_html_report(findings)
         self.assertIn('<td class="numeric">57.2</td>', html)
         self.assertIn('(64.5)', html)
+        self.assertIn("applicability: candidate_unverified", html)
+        self.assertIn("CVSS 8.8", html)
+        self.assertIn("factor: ×0.65", html)
 
     def test_report_renders_risk_and_remediation_guidance(self):
         findings = self.sample()

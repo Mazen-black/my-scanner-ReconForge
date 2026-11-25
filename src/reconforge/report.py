@@ -181,6 +181,7 @@ def _risk_rows(results):
             + (f'<div class="muted">Factors: criticality ×{_e(context.get("criticality_factor"))}; exposure ×{_e(context.get("exposure_factor"))}</div>' if context else '')
             + '</td>'
             f'<td>{_e(risk.get("top_cve"))}'
+            + (f'<div class="muted">CVSS {_e(risk.get("top_cve_cvss_base_score"))}; applicability: {_e(risk.get("top_cve_applicability_status"))}; factor: ×{_e(risk.get("top_cve_applicability_factor"))}</div>' if risk.get("top_cve") else '')
             + (f'<div class="muted">{_e(risk.get("model"))}: {_e(risk.get("notes", [""])[0])}</div>' if risk.get("model") else '')
             + '</td>'
             f'<td>{_e(risk.get("exploit_reference_count", 0))}</td>'
