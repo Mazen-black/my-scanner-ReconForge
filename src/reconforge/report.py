@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .summary import summarize_findings
+
 
 def _e(value, default="—"):
     """HTML-escape untrusted values before placing them in the report."""
@@ -267,11 +269,12 @@ def _accepted_os_host_count(results, host_os_fingerprints=None):
     )
 
 
-def render_html_report(results, target="Unknown", generated_at=None, host_os_fingerprints=None):
+def render_html_report(results, target="Unknown", generated_at=None, host_os_fingerprints=None, hosts=None):
     """Return a complete standalone HTML report. All source data is escaped."""
     results = results if isinstance(results, list) else []
     generated_at = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    open_ports = len(results)
+    summary = summarize_findings(results, hosts=hosts)
+    open_ports = summary["open_services"]
     cves = [cve for item in results for cve in (item.get("cve_assessment") or [])]
     exploits = [exploit for item in results for exploit in (item.get("searchsploit_assessment") or [])]
     exploit_intelligence_by_id = {
@@ -355,13 +358,18 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <h1>Network Scan Report</h1>
 <div class="sub">Target: <strong>{_e(target)}</strong> · Generated: {_e(generated_at)}</div></header>
 <div class="cards">
+<div class="card"><div class="muted">Hosts scanned</div><div class="metric">{summary["hosts_scanned"]}</div></div>
 <div class="card"><div class="muted">Open services</div><div class="metric">{open_ports}</div></div>
 <div class="card"><div class="muted">CVE references</div><div class="metric">{len(cves)}</div></div>
 <div class="card"><div class="muted">High / Critical CVEs</div><div class="metric">{high_critical}</div></div>
 <div class="card"><div class="muted">Version matches</div><div class="metric">{confirmed_matches}</div></div>
 <div class="card"><div class="muted">High / Critical review priority</div><div class="metric">{high_priority}</div></div>
 <div class="card"><div class="muted">Unverified CVE candidates</div><div class="metric">{unverified_candidates}</div></div>
-<div class="card"><div class="muted">Exploit references</div><div class="metric">{len(exploits)}</div></div>
+<div class="card"><div class="muted">Exploit references</div><div class="metric">{summary["exploit_references"]}</div></div>
+<div class="card"><div class="muted">Exploit intelligence references</div><div class="metric">{summary["exploit_intelligence_references"]}</div></div>
+<div class="card"><div class="muted">Network exposure observations</div><div class="metric">{summary["network_exposure_observations"]}</div></div>
+<div class="card"><div class="muted">Risk-scored services</div><div class="metric">{summary["risk_scored_services"]}</div></div>
+<div class="card"><div class="muted">Services with remediation guidance</div><div class="metric">{summary["remediation_guidance_services"]}</div></div>
 <div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results, host_os_fingerprints)}</div></div>
 </div>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
@@ -387,12 +395,12 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 </main></body></html>"""
 
 
-def write_html_report(results, output_path, target="Unknown", host_os_fingerprints=None):
+def write_html_report(results, output_path, target="Unknown", host_os_fingerprints=None, hosts=None):
     """Write a UTF-8 standalone HTML report and return its path."""
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        render_html_report(results, target=target, host_os_fingerprints=host_os_fingerprints),
+        render_html_report(results, target=target, host_os_fingerprints=host_os_fingerprints, hosts=hosts),
         encoding="utf-8",
     )
     return output
@@ -443,6 +451,7 @@ def main():
     write_html_report(
         results, output, target=target,
         host_os_fingerprints=host_os_fingerprints,
+        hosts=metadata.get("resolved_hosts", []) if isinstance(payload, dict) else None,
     )
     print(f"HTML report saved to {output}")
 

@@ -46,6 +46,7 @@ The installable `src/reconforge/` package separates the scanner workflow into fo
 - `assessment.py` is a compatibility facade; `cpe_assessment.py` evaluates CPE/CVE applicability, `exploit_assessment.py` handles exploit-reference triage and exposure evidence, and `web_assessment.py` analyzes HTTP hardening and bounded page metadata.
 - `risk.py`, `asset_context.py`, and `remediation.py` handle prioritization, operator-supplied context, and guidance.
 - `report.py` writes the HTML dashboard and renders existing JSON reports.
+- `summary.py` is the canonical aggregation layer used by both scanner JSON output and HTML dashboard metrics.
 
 Root-level Python scripts remain compatibility entry points for existing workflows.
 

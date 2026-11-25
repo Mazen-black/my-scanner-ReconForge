@@ -33,6 +33,7 @@ import nmap
 from .asset_context import assess_asset_context
 from .remediation import build_remediation
 from .report import write_html_report
+from .summary import summarize_findings
 from .risk import assess_cves, assess_service_risk
 from .nvd import (
     BACKOFF_BASE,
@@ -438,16 +439,7 @@ def main():
         "schema_version": REPORT_SCHEMA_VERSION,
         "metadata": scan_metadata,
         "findings": results,
-        "summary": {
-            "hosts_scanned": len(hosts),
-            "open_services": len(results),
-            "cve_candidates": sum(len(item["cve_assessment"]) for item in results),
-            "exploit_references": sum(len(item["searchsploit_assessment"]) for item in results),
-            "exploit_intelligence_references": sum(len(item.get("exploit_intelligence") or []) for item in results),
-            "network_exposure_observations": sum(len(item.get("network_exposure") or []) for item in results),
-            "risk_scored_services": sum(item.get("risk_assessment", {}).get("score") is not None for item in results),
-            "remediation_guidance_services": sum(bool(item.get("remediation_guidance")) for item in results),
-        },
+        "summary": summarize_findings(results, hosts=hosts),
     }
     try:
         write_json_report(filename, report)
@@ -460,6 +452,7 @@ def main():
             html_path = write_html_report(
                 results, args.html_output, target=target,
                 host_os_fingerprints=scan_metadata["host_os_fingerprints"],
+                hosts=hosts,
             )
         except OSError as exc:
             print(f"تعذر حفظ تقرير HTML: {exc}")

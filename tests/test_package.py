@@ -25,7 +25,7 @@ class PackageTests(unittest.TestCase):
     def test_extracted_modules_are_importable(self):
         from reconforge import (
             cpe_assessment, exploit_assessment, exploitdb, nvd, targeting,
-            web_assessment, web_probe,
+            web_assessment, web_probe, summary,
         )
 
         self.assertTrue(callable(exploitdb.searchsploit_lookup))
@@ -35,6 +35,7 @@ class PackageTests(unittest.TestCase):
         self.assertTrue(callable(cpe_assessment.assess_cve_applicability))
         self.assertTrue(callable(exploit_assessment.build_exploit_intelligence))
         self.assertTrue(callable(web_assessment.analyze_web_content))
+        self.assertTrue(callable(summary.summarize_findings))
 
     def test_assessment_domains_are_split_and_facade_stays_compatible(self):
         from reconforge import assessment, cpe_assessment, exploit_assessment, web_assessment
