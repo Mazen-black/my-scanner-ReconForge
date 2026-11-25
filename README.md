@@ -89,20 +89,37 @@ sudo apt install nmap exploitdb
 
 Create a virtual environment and install Python dependencies:
 
-> The latest CPE/CVE correlation and host-level evidence improvements are currently on PR branch `fix/normalize-nmap-cpe-fingerprint`. Until that pull request is merged into `main`, include `--branch` when cloning so you do not install the older default branch.
+Clone the released source from the default branch and install it in an isolated environment:
 
 ```bash
-git clone --branch fix/normalize-nmap-cpe-fingerprint https://github.com/Mazen-black/my-scanner-ReconForge.git
+git clone https://github.com/Mazen-black/my-scanner-ReconForge.git
 cd my-scanner-ReconForge
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e .
+pip install .
+```
+
+Alternatively, install the published wheel directly inside an active virtual environment:
+
+```bash
+pip install https://github.com/Mazen-black/my-scanner-ReconForge/releases/download/v0.10.11/reconforge-0.10.11-py3-none-any.whl
 ```
 
 Editable installation provides the `reconforge` and `reconforge-report` commands. The root-level `scanner.py` and `report.py` scripts remain available for compatibility.
 
 If you do not use Searchsploit, omit the `exploitdb` system package and run with `--no-exploitdb`.
+
+### Build a local Debian package (experimental)
+
+A Debian package build script is included for Kali/Debian users who prefer `apt`-managed installation. It builds locally and does not publish an APT repository or install anything by itself:
+
+```bash
+./packaging/build-deb.sh
+sudo apt install ./dist/reconforge_0.10.11_all.deb
+```
+
+The package declares its Python and Nmap dependencies so APT can resolve them from your configured repositories. Searchsploit remains optional. The `.deb` is currently a local build artifact, not an asset attached to the GitHub Release.
 
 ## Usage
 
