@@ -446,11 +446,30 @@ def main():
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
     safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target).strip("._") or "target"
     filename = args.output or f"scan_{safe_target}_{timestamp}.json"
+    summary = summarize_findings(results, hosts=hosts)
+    print("\nHost-level summary (canonical aggregation):")
+    print(
+        f"  Hosts: {summary['hosts_scanned']} | Open services: {summary['open_services']} | "
+        f"CVE observations: {summary['cve_candidates']} | Unique per-host CVE candidates: {summary['unique_host_cves']}"
+    )
+    print(
+        f"  Cross-service CVEs: {summary['cross_service_cves']} | "
+        f"Duplicate observations: {summary['duplicate_cve_observations']} | "
+        f"Hosts with CVE candidates: {summary['hosts_with_cves']}"
+    )
+    for host_summary in summary["host_risk_summary"]:
+        score = host_summary["highest_review_priority_score"]
+        score_text = f" ({score:.1f}/100)" if score is not None else ""
+        print(
+            f"  {host_summary['host']}: {host_summary['unique_cve_count']} unique CVE candidates "
+            f"across ports {', '.join(host_summary['ports']) or 'none'}; "
+            f"highest service review priority: {host_summary['highest_review_priority']}{score_text}"
+        )
     report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "metadata": scan_metadata,
         "findings": results,
-        "summary": summarize_findings(results, hosts=hosts),
+        "summary": summary,
     }
     try:
         write_json_report(filename, report)

@@ -31,7 +31,10 @@ class SummaryAggregationTests(unittest.TestCase):
         ]
 
     def test_summary_counts_services_and_evidence_consistently(self):
-        self.assertEqual(summarize_findings(self.findings, hosts=["192.0.2.10", "192.0.2.11"]), {
+        actual = summarize_findings(self.findings, hosts=["192.0.2.10", "192.0.2.11"])
+        for host in actual["host_risk_summary"]:
+            host.pop("cve_evidence")
+        self.assertEqual(actual, {
             "hosts_scanned": 2,
             "open_services": 2,
             "cve_candidates": 2,
@@ -93,6 +96,43 @@ class SummaryAggregationTests(unittest.TestCase):
         self.assertEqual(first["highest_review_priority_score"], 82.0)
         self.assertEqual(second["unique_cve_count"], 1)
         self.assertIsNone(second["highest_review_priority_score"])
+
+
+    def test_host_cve_evidence_retains_each_service_and_mixed_applicability(self):
+        findings = [
+            {"host": "192.0.2.10", "port": 21,
+             "service": {"name": "ftp", "product": "vsftpd", "version": "2.3.4"},
+             "cve_assessment": [{"id": "CVE-2025-1234", "cvss": 9.8,
+                                 "applicability": {"status": "version_match"}}],
+             "risk_assessment": {"score": 98.0, "level": "Critical"}},
+            {"host": "192.0.2.10", "port": 2121,
+             "service": {"name": "ftp-alt", "product": "vsftpd", "version": "unknown"},
+             "cve_assessment": [{"id": "CVE-2025-1234", "cvss": 9.8,
+                                 "applicability": {"status": "candidate_unverified"}}],
+             "risk_assessment": {"score": 63.7, "level": "Medium"}},
+        ]
+        host = summarize_findings(findings)["host_risk_summary"][0]
+        self.assertEqual(host["unique_cve_count"], 1)
+        self.assertEqual(host["cross_service_cves"], ["CVE-2025-1234"])
+        evidence = host["cve_evidence"][0]
+        self.assertEqual(evidence["cve_id"], "CVE-2025-1234")
+        observations = evidence["service_observations"]
+        self.assertEqual([item["port"] for item in observations], ["21", "2121"])
+        self.assertEqual(observations[0]["applicability_statuses"], ["version_match"])
+        self.assertEqual(observations[1]["applicability_statuses"], ["candidate_unverified"])
+        self.assertEqual(observations[0]["cvss_base_scores"], [9.8])
+        self.assertEqual(host["highest_review_priority_score"], 98.0)
+
+    def test_dashboard_displays_cross_service_applicability_per_port(self):
+        html = render_html_report([
+            {"host": "192.0.2.10", "port": 21, "service": {"name": "ftp"},
+             "cve_assessment": [{"id": "CVE-2025-1234", "applicability": {"status": "version_match"}}]},
+            {"host": "192.0.2.10", "port": 2121, "service": {"name": "ftp-alt"},
+             "cve_assessment": [{"id": "CVE-2025-1234", "applicability": {"status": "candidate_unverified"}}]},
+        ])
+        self.assertIn("port 21 ftp [version_match]", html)
+        self.assertIn("port 2121 ftp-alt [candidate_unverified]", html)
+        self.assertIn("mixed states are not collapsed", html)
 
     def test_host_summary_uses_risk_level_when_priority_field_is_absent(self):
         summary = summarize_findings([{

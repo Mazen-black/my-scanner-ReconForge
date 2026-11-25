@@ -30,7 +30,7 @@ A Python-based network service scanner that combines Nmap service/version detect
 - Supports `--no-nvd` for offline operation when NVD is unavailable.
 - Produces versioned JSON reports with scan metadata, resolved hosts, summary counts, service details, matching evidence, and assessment limitations.
 - Adds an evidence-confidence model that separates CVE applicability confidence from exploitability confidence, records evidence sources/reasons/gaps, and never treats CVSS severity or an Exploit-DB title match as proof of exploitability.
-- Correlates Exploit-DB references only through explicit CVE identifiers, collapses duplicate EDB hits while retaining observations, and exposes related references sharing an explicit CVE link.
+- Correlates Exploit-DB references only through explicit CVE identifiers found in titles, structured source fields, or duplicate observations; collapses duplicate EDB hits while retaining the evidence source for each link.
 - Validates target, port ranges, result limits, and shell-safe Nmap argument parsing before scanning.
 - Includes offline unit and integration tests for CPE conversion, version applicability, result classification, input validation, and report structure.
 
@@ -46,7 +46,7 @@ The installable `src/reconforge/` package separates the scanner workflow into fo
 - `assessment.py` is a compatibility facade; `cpe_assessment.py` evaluates CPE/CVE applicability, `exploit_assessment.py` handles exploit-reference triage and exposure evidence, and `web_assessment.py` analyzes HTTP hardening and bounded page metadata.
 - `risk.py`, `asset_context.py`, and `remediation.py` handle prioritization, operator-supplied context, and guidance.
 - `report.py` writes the HTML dashboard and renders existing JSON reports.
-- `summary.py` is the canonical aggregation layer used by both scanner JSON output and HTML dashboard metrics.
+- `summary.py` is the canonical aggregation layer used by scanner CLI host summaries, JSON output, and HTML dashboard metrics.
 
 Root-level Python scripts remain compatibility entry points for existing workflows.
 
@@ -197,7 +197,7 @@ Reports use a versioned JSON envelope:
 
 - `schema_version`: report format version.
 - `metadata`: requested target, Nmap-resolved hosts, selected ports/arguments, UTC timestamps, duration, scanner version, and one `host_os_fingerprints` record per resolved host (including hosts with no open TCP services).
-- `summary`: host, open-service, raw CVE-observation, unique per-host CVE, cross-service CVE, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts. Includes a per-host risk summary with observed ports and the highest service review-priority score.
+- `summary`: host, open-service, raw CVE-observation, unique per-host CVE, cross-service CVE, Searchsploit-reference, network-exposure, risk-scored service, and remediation-guidance counts. Includes per-host CVE evidence grouped by identifier with every observed service/port, product/version, applicability states, and CVSS values; mixed service-level applicability is retained rather than flattened into a host-wide claim. The host priority is the highest valid service review-priority score, not a host compromise probability.
 - `findings`: one record per discovered open TCP service, including evidence and assessment limitations.
 - Each finding's `host_os_fingerprint`: per-service copy of the host-level Nmap OS match for convenient service-level review. The HTML report uses the host-level metadata as its source of truth, falls back to per-service records for older reports, and never treats Nmap accuracy as a probability.
 - Each finding's `identification_evidence.technology_fingerprint` stores observed Nmap metadata and technology hints with their evidence source.

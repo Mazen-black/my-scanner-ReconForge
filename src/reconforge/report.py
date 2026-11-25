@@ -344,6 +344,14 @@ def render_html_report(results, target="Unknown", generated_at=None, host_os_fin
     open_ports = summary["open_services"]
     host_risk_rows = []
     for host_item in summary["host_risk_summary"]:
+        cve_evidence_text = "; ".join(
+            f"{entry['cve_id']}: " + ", ".join(
+                f"port {service.get('port') or '?'} {service.get('service') or 'unknown'} ["
+                f"{', '.join(service.get('applicability_statuses') or ['status unknown'])}]"
+                for service in entry.get("service_observations", [])
+            )
+            for entry in host_item.get("cve_evidence", [])
+        )
         host_risk_rows.append(
             "<tr>"
             f"<td>{_e(host_item['host'])}</td>"
@@ -351,11 +359,12 @@ def render_html_report(results, target="Unknown", generated_at=None, host_os_fin
             f"<td>{_e(', '.join(host_item['ports']) or '—')}</td>"
             f"<td class=\"numeric\">{host_item['unique_cve_count']}</td>"
             f"<td>{_e(', '.join(host_item['cross_service_cves']) or 'None')}</td>"
+            f"<td>{_e(cve_evidence_text or 'No CVE service evidence')}</td>"
             f"<td>{_e(host_item['highest_review_priority'])}"
             + (f" ({host_item['highest_review_priority_score']:.1f}/100)" if host_item['highest_review_priority_score'] is not None else "")
             + "</td></tr>"
         )
-    host_risk_html = "".join(host_risk_rows) or '<tr><td colspan="6" class="empty">No host risk data available.</td></tr>'
+    host_risk_html = "".join(host_risk_rows) or '<tr><td colspan="7" class="empty">No host risk data available.</td></tr>'
     cves = [cve for item in results for cve in (item.get("cve_assessment") or [])]
     exploits = [exploit for item in results for exploit in (item.get("searchsploit_assessment") or [])]
     exploit_intelligence_by_id = {
@@ -456,7 +465,7 @@ th{{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.0
 <div class="card"><div class="muted">Services with remediation guidance</div><div class="metric">{summary["remediation_guidance_services"]}</div></div>
 <div class="card"><div class="muted">Hosts with accepted OS match</div><div class="metric">{_accepted_os_host_count(results, host_os_fingerprints)}</div></div>
 </div>
-<section><h2>Host-Level Risk & CVE Correlation</h2><p class="muted">CVE candidates are deduplicated within each host, not across different hosts. A candidate observed on multiple services is shown once in the host total and separately identified as cross-service correlation. These are assessment candidates, not confirmed vulnerabilities. Scores are the highest service review-priority score, not a host compromise probability.</p><div class="table-wrap"><table><thead><tr><th>Host</th><th>Services</th><th>Observed ports</th><th>Unique CVE candidates</th><th>Cross-service candidates</th><th>Highest review priority</th></tr></thead><tbody>{host_risk_html}</tbody></table></div></section>
+<section><h2>Host-Level Risk & CVE Correlation</h2><p class="muted">CVE candidates are deduplicated within each host, not across different hosts. A candidate observed on multiple services is shown once in the host total and separately identified as cross-service correlation. These are assessment candidates, not confirmed vulnerabilities. Scores are the highest service review-priority score, not a host compromise probability.</p><div class="table-wrap"><table><thead><tr><th>Host</th><th>Services</th><th>Observed ports</th><th>Unique CVE candidates</th><th>Cross-service candidates</th><th>CVE service evidence (port / applicability)</th><th>Highest service review priority</th></tr></thead><tbody>{host_risk_html}</tbody></table></div><p class="muted">Per-CVE service observations retain ports and applicability states; mixed states are not collapsed into a single host-wide applicability claim.</p></section>
 <section><h2>Discovered Services</h2><div class="table-wrap"><table>
 <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Host OS fingerprint</th><th>State</th></tr></thead>
 <tbody>{services_html}</tbody></table></div></section>

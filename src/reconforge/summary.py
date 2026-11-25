@@ -29,6 +29,7 @@ def _host_risk_summary(findings, resolved_hosts):
             "ports": [],
             "unique_cves": [],
             "cve_service_counts": {},
+            "cve_evidence": {},
             "highest_review_priority_score": None,
             "highest_review_priority": "Unscored",
         }
@@ -39,7 +40,8 @@ def _host_risk_summary(findings, resolved_hosts):
         host = str(finding["host"])
         entry = hosts.setdefault(host, {
             "host": host, "services": 0, "ports": [], "unique_cves": [],
-            "cve_service_counts": {}, "highest_review_priority_score": None,
+            "cve_service_counts": {}, "cve_evidence": {},
+            "highest_review_priority_score": None,
             "highest_review_priority": "Unscored",
         })
         entry["services"] += 1
@@ -53,7 +55,14 @@ def _host_risk_summary(findings, resolved_hosts):
             entry["highest_review_priority_score"] = score
             entry["highest_review_priority"] = str(risk.get("priority") or risk.get("level") or risk.get("priority_label") or "Unspecified")
 
-        observed_on_service = set()
+        observed_on_service = {}
+        service = finding.get("service") if isinstance(finding.get("service"), dict) else {}
+        service_evidence = {
+            "port": str(port) if port is not None else None,
+            "service": str(service.get("name") or finding.get("service_name") or "unknown"),
+            "product": str(service.get("product") or "") or None,
+            "version": str(service.get("version") or "") or None,
+        }
         for cve in _records(finding.get("cve_assessment")):
             if not isinstance(cve, dict):
                 continue
@@ -61,15 +70,37 @@ def _host_risk_summary(findings, resolved_hosts):
             if not isinstance(cve_id, str) or not _CVE_ID.fullmatch(cve_id.strip()):
                 continue
             cve_id = cve_id.strip().upper()
-            observed_on_service.add(cve_id)
-        for cve_id in observed_on_service:
+            evidence = observed_on_service.setdefault(cve_id, {**service_evidence, "applicability_statuses": set(), "cvss_base_scores": set()})
+            applicability = cve.get("applicability")
+            status = applicability.get("status") if isinstance(applicability, dict) else None
+            if isinstance(status, str) and status:
+                evidence["applicability_statuses"].add(status)
+            cvss = cve.get("cvss")
+            if isinstance(cvss, (int, float)) and not isinstance(cvss, bool):
+                try:
+                    cvss_value = float(cvss)
+                except (OverflowError, ValueError):
+                    cvss_value = None
+                if cvss_value is not None and math.isfinite(cvss_value) and 0 <= cvss_value <= 10:
+                    evidence["cvss_base_scores"].add(cvss_value)
+        for cve_id, evidence in observed_on_service.items():
             entry["cve_service_counts"][cve_id] = entry["cve_service_counts"].get(cve_id, 0) + 1
+            host_evidence = entry["cve_evidence"].setdefault(cve_id, [])
+            host_evidence.append({
+                **{key: value for key, value in evidence.items() if key not in {"applicability_statuses", "cvss_base_scores"}},
+                "applicability_statuses": sorted(evidence["applicability_statuses"]),
+                "cvss_base_scores": sorted(evidence["cvss_base_scores"]),
+            })
 
     output = []
     for host, entry in sorted(hosts.items()):
         entry["ports"].sort(key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value))
         entry["unique_cves"] = sorted(entry["cve_service_counts"])
         entry["unique_cve_count"] = len(entry["unique_cves"])
+        entry["cve_evidence"] = [
+            {"cve_id": cve_id, "service_observations": entry["cve_evidence"][cve_id]}
+            for cve_id in sorted(entry["cve_evidence"])
+        ]
         entry["cross_service_cves"] = sorted(
             cve for cve, count in entry["cve_service_counts"].items() if count > 1
         )
