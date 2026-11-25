@@ -2,8 +2,6 @@
 
 import requests
 
-from .assessment import analyze_http_security, analyze_web_content
-
 SCANNER_VERSION = "0.10.11"
 
 
@@ -34,19 +32,24 @@ def probe_http_metadata(host, port, port_data, requests_module=None, scanner_ver
     except requests.exceptions.RequestException:
         return {"status": "probe_error", "error": "http_request_failed"}
 
-    set_cookie_headers = []
-    raw_headers = getattr(getattr(response, "raw", None), "headers", None)
-    if raw_headers is not None and hasattr(raw_headers, "getlist"):
-        set_cookie_headers = raw_headers.getlist("Set-Cookie")
-    elif response.headers.get("Set-Cookie"):
-        set_cookie_headers = [response.headers.get("Set-Cookie")]
-    from .assessment import analyze_http_security, analyze_web_content
-    analysis = analyze_http_security(response.headers, set_cookie_headers, is_https=is_https)
-    return {
-        "status": "response_received", "scheme": scheme, "status_code": response.status_code,
-        "redirect_location_present": bool(response.headers.get("Location")),
-        "security_analysis": analysis,
-    }
+    try:
+        set_cookie_headers = []
+        raw_headers = getattr(getattr(response, "raw", None), "headers", None)
+        if raw_headers is not None and hasattr(raw_headers, "getlist"):
+            set_cookie_headers = raw_headers.getlist("Set-Cookie")
+        elif response.headers.get("Set-Cookie"):
+            set_cookie_headers = [response.headers.get("Set-Cookie")]
+        from .assessment import analyze_http_security
+        analysis = analyze_http_security(response.headers, set_cookie_headers, is_https=is_https)
+        return {
+            "status": "response_received", "scheme": scheme, "status_code": response.status_code,
+            "redirect_location_present": bool(response.headers.get("Location")),
+            "security_analysis": analysis,
+        }
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
 
 
 WEB_BODY_LIMIT = 262144
