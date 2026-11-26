@@ -32,3 +32,10 @@ dist/
 # Generated scan evidence (may contain sensitive target and service details)
 evidence/*
 !evidence/README.md
+
+# Keep only reviewed, sanitized Metasploitable 2 portfolio evidence tracked.
+!evidence/metasploitable2-2026-11-26/
+evidence/metasploitable2-2026-11-26/*
+!evidence/metasploitable2-2026-11-26/README.md
+!evidence/metasploitable2-2026-11-26/dashboard.png
+!evidence/metasploitable2-2026-11-26/scan-console.png
