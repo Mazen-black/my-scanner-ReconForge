@@ -144,7 +144,7 @@ reconforge --authorized --target 192.0.2.10 --asset-criticality high --exposure 
 
 CIDR targets are limited to a maximum of 256 addresses (for example, IPv4 /24 or IPv6 /120). Larger ranges are rejected before Nmap starts.
 
-The `--nmap-args` option accepts only these reviewed, argument-free flags: `-sV`, `-sT`, `-sU`, `-Pn`, `-n`, `-O`, `--reason`, and `--open`. Options that accept additional values and unreviewed flags are rejected. Use `--ports` to select ports.
+The `--nmap-args` option accepts only these reviewed, argument-free flags: `-sV`, `-sT`, `-Pn`, `-n`, `-O`, `--reason`, and `--open`. Options that accept additional values and unreviewed flags are rejected. Use `--ports` to select ports.
 
 Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Supported exposure values: `unknown`, `internal`, `internet`. Both default to `unknown`; the scanner does not infer internet reachability from an open port.
 
