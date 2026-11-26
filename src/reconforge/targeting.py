@@ -55,7 +55,7 @@ def validate_ports(value):
     return ports
 
 ALLOWED_NMAP_FLAGS = frozenset({
-    "-sV", "-sT", "-sU", "-Pn", "-n", "-O",
+    "-sV", "-sT", "-Pn", "-n", "-O",
     "--reason", "--open",
 })
 
