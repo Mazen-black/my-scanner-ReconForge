@@ -4,6 +4,8 @@ import ipaddress
 import re
 import shlex
 
+MAX_CIDR_ADDRESSES = 256
+
 
 def validate_target(value):
     """Accept one IP address, CIDR network, or DNS hostname; reject option/shell-like input."""
@@ -18,10 +20,16 @@ def validate_target(value):
     except ValueError:
         pass
     try:
-        ipaddress.ip_network(target, strict=False)
+        network = ipaddress.ip_network(target, strict=False)
+        if network.num_addresses > MAX_CIDR_ADDRESSES:
+            raise ValueError(
+                f"CIDR contains {network.num_addresses} addresses; "
+                f"the maximum allowed is {MAX_CIDR_ADDRESSES}."
+            )
         return target
-    except ValueError:
-        pass
+    except ValueError as exc:
+        if "maximum allowed" in str(exc):
+            raise
     hostname = target[:-1] if target.endswith(".") else target
     if len(hostname) > 253 or not hostname:
         raise ValueError("Hostname length is invalid.")
@@ -46,8 +54,14 @@ def validate_ports(value):
             raise ValueError(f"Port range start exceeds end: {item!r}")
     return ports
 
+ALLOWED_NMAP_FLAGS = frozenset({
+    "-sV", "-sT", "-sU", "-Pn", "-n", "-O",
+    "--reason", "--open",
+})
+
+
 def normalize_nmap_args(value):
-    """Parse and safely re-quote user-supplied Nmap arguments for python-nmap's shell command."""
+    """Accept only explicitly reviewed, argument-free Nmap flags."""
     try:
         tokens = shlex.split(value or "")
     except ValueError as exc:
@@ -56,6 +70,13 @@ def normalize_nmap_args(value):
         raise ValueError("--nmap-args cannot be empty.")
     if any(any(ord(ch) < 32 for ch in token) for token in tokens):
         raise ValueError("--nmap-args cannot contain control characters.")
+    unsupported = [token for token in tokens if token not in ALLOWED_NMAP_FLAGS]
+    if unsupported:
+        allowed = ", ".join(sorted(ALLOWED_NMAP_FLAGS))
+        raise ValueError(
+            f"Unsupported Nmap argument(s): {', '.join(unsupported)}. "
+            f"Allowed flags: {allowed}"
+        )
     return shlex.join(tokens)
 
 def build_host_os_fingerprint(os_matches, requested=False, minimum_accuracy=90):
