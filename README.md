@@ -38,6 +38,8 @@ A Python-based network service scanner that combines Nmap service/version detect
 
 The installable `src/reconforge/` package separates the scanner workflow into focused modules:
 
+- The CLI and all user-facing messages use English consistently; the README is also maintained in English.
+
 - `scanner.py` coordinates Nmap, assessment, reporting, and command-line execution.
 - `targeting.py` validates targets and ports and interprets host-level Nmap OS evidence.
 - `nvd.py` handles CPE query construction, NVD requests, rate limiting, and CVE applicability candidates.
@@ -104,24 +106,26 @@ If you do not use Searchsploit, omit the `exploitdb` system package and run with
 
 ## Usage
 
-Only scan systems you own or have explicit permission to assess.
+Only scan systems you own or have explicit permission to assess. Every scan requires the explicit `--authorized` acknowledgement flag; this is an operator confirmation, not a technical authorization check.
+
+Every example below includes the required flag.
 
 Basic scan:
 
 ```bash
-reconforge --target 192.0.2.10
+reconforge --authorized --target 192.0.2.10
 ```
 
 Specify ports and generate both JSON and HTML reports:
 
 ```bash
-reconforge --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
+reconforge --authorized --target 192.0.2.10 --ports 1-1000 --output report.json --html-output report.html
 ```
 
 Enable optional OS fingerprinting when you have authorization and the required privileges:
 
 ```bash
-sudo reconforge --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
+sudo reconforge --authorized --target 192.0.2.10 --ports 1-1000 --os-detection --output report.json
 ```
 
 This option adds Nmap's -O OS-detection probe. It may require root/raw-socket privileges and can still return no reliable match. Without --os-detection, the default scan remains unchanged. ReconForge accepts only the first Nmap OS match at 90% accuracy or higher; lower-confidence or missing matches remain unknown. Broad OS-family matches are not proof of architecture or exploit compatibility.
@@ -129,21 +133,25 @@ This option adds Nmap's -O OS-detection probe. It may require root/raw-socket pr
 Run without NVD requests when offline or when the NVD API is unavailable:
 
 ```bash
-reconforge --target 192.0.2.10 --no-nvd --html-output offline-report.html
+reconforge --authorized --target 192.0.2.10 --no-nvd --html-output offline-report.html
 ```
 
 Supply asset context only when independently verified:
 
 ```bash
-reconforge --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
+reconforge --authorized --target 192.0.2.10 --asset-criticality high --exposure internet --html-output report.html
 ```
+
+CIDR targets are limited to a maximum of 256 addresses (for example, IPv4 /24 or IPv6 /120). Larger ranges are rejected before Nmap starts.
+
+The `--nmap-args` option accepts only these reviewed, argument-free flags: `-sV`, `-sT`, `-sU`, `-Pn`, `-n`, `-O`, `--reason`, and `--open`. Options that accept additional values and unreviewed flags are rejected. Use `--ports` to select ports.
 
 Supported criticality values: `unknown`, `low`, `medium`, `high`, `critical`. Supported exposure values: `unknown`, `internal`, `internet`. Both default to `unknown`; the scanner does not infer internet reachability from an open port.
 
 Enable the optional HTTP headers and cookie review (only for recognized web services):
 
 ```bash
-reconforge --target 192.0.2.10 --http-probe
+reconforge --authorized --target 192.0.2.10 --http-probe
 ```
 
 The HTTP review sends one `HEAD /` request per recognized web service, does not follow redirects, uses short timeouts, and does not disable TLS certificate verification. It records cookie names and security attributes only; cookie values are not saved. Missing security headers are hardening observations, not proof of an exploitable vulnerability.
@@ -151,7 +159,7 @@ The HTTP review sends one `HEAD /` request per recognized web service, does not 
 Enable bounded web technology and site metadata discovery:
 
 ```bash
-reconforge --target 192.0.2.10 --web-intel
+reconforge --authorized --target 192.0.2.10 --web-intel
 ```
 
 This mode fetches only the root document, `/robots.txt`, and `/sitemap.xml` on the scanned host. The root response is capped at 256 KiB; robots and sitemap responses are capped at 64 KiB each. It does not follow redirects, fetch JavaScript assets, crawl links, or request URLs listed inside robots/sitemap files. CMS and JavaScript-library labels are heuristic hints from meta-generator values and asset URL patterns, not proof of installed versions. Robots directives are not access controls.
@@ -159,14 +167,14 @@ This mode fetches only the root document, `/robots.txt`, and `/sitemap.xml` on t
 Disable the local Exploit-DB search:
 
 ```bash
-reconforge --target 192.0.2.10 --no-exploitdb
+reconforge --authorized --target 192.0.2.10 --no-exploitdb
 ```
 
 Provide an NVD API key through an environment variable (recommended over putting a key in shell history):
 
 ```bash
 export NVD_API_KEY="YOUR_NVD_API_KEY"
-reconforge --target 192.0.2.10
+reconforge --authorized --target 192.0.2.10
 ```
 
 You can also pass `--nvd-api-key`, but avoid saving secrets in scripts, screenshots, shell history, or reports. Get an API key from the official [NVD API site](https://nvd.nist.gov/developers/request-an-api-key).
@@ -214,7 +222,7 @@ Reports use a versioned JSON envelope:
 - `risk_assessment` separates technical review priority from CVSS and includes an optional operator-contextual score.
 - `remediation_guidance` contains service/CVE guidance and verification steps in `guidance_only` mode; no changes are executed.
 
-Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated reports are excluded from version control by default; the explicitly reviewed, bounded lab sample under `evidence/` is intentionally tracked as portfolio evidence.
+Reports may contain target addresses, port/service information, software versions, and vulnerability references. Keep reports private unless you have checked them for sensitive information. Generated scan reports and evidence artifacts are not committed to version control; retain them locally or in a private evidence store.
 
 ## Limitations
 

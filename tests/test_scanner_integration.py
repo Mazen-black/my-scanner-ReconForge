@@ -23,20 +23,29 @@ class InputValidationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     scanner.validate_ports(ports)
 
-    def test_nmap_arguments_are_shell_quoted(self):
-        normalized = scanner.normalize_nmap_args('-sV --script "safe script"')
-        self.assertIn("-sV", normalized)
-        self.assertIn("'safe script'", normalized)
+    def test_nmap_arguments_are_restricted_to_allowlisted_flags(self):
+        normalized = scanner.normalize_nmap_args("-sV -Pn --reason")
+        self.assertEqual(normalized, "-sV -Pn --reason")
+        for value in ('-sV --script vuln', '-A', '--datadir /tmp', '-p 1-65535'):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "Unsupported Nmap argument"):
+                    scanner.normalize_nmap_args(value)
         with self.assertRaises(ValueError):
             scanner.normalize_nmap_args('"unterminated')
 
+    def test_authorization_acknowledgement_is_required(self):
+        with self.assertRaises(SystemExit):
+            scanner.parse_args(["--target", "192.0.2.10"])
+        args = scanner.parse_args(["--target", "192.0.2.10", "--authorized"])
+        self.assertTrue(args.authorized)
+
     def test_os_detection_flag_adds_nmap_os_scan(self):
-        args = scanner.parse_args(["--target", "192.0.2.10", "--os-detection"])
+        args = scanner.parse_args(["--target", "192.0.2.10", "--authorized", "--os-detection"])
         self.assertIn("-O", args.nmap_args.split())
         self.assertTrue(args.os_detection)
 
     def test_os_detection_flag_does_not_duplicate_existing_nmap_option(self):
-        args = scanner.parse_args(["--target", "192.0.2.10", "--nmap-args", "-sV -O", "--os-detection"])
+        args = scanner.parse_args(["--target", "192.0.2.10", "--authorized", "--nmap-args", "-sV -O", "--os-detection"])
         self.assertEqual(args.nmap_args.split().count("-O"), 1)
 
     def test_os_fingerprint_requires_high_confidence_match(self):
@@ -300,7 +309,7 @@ class SearchsploitLookupTests(unittest.TestCase):
 class IntegratedAssessmentTests(unittest.TestCase):
     def test_cli_exposes_offline_html_and_asset_context_options(self):
         args = scanner.parse_args([
-            "--target", "192.0.2.10", "--no-nvd", "--html-output", "scan.html",
+            "--target", "192.0.2.10", "--authorized", "--no-nvd", "--html-output", "scan.html",
             "--asset-criticality", "critical", "--exposure", "internet",
         ])
         self.assertTrue(args.no_nvd)

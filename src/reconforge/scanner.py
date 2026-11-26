@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-بورت سكانر محسّن: nmap -sV + CVEs من NVD + بحث Exploit-DB محلي (searchsploit)
+ReconForge network reconnaissance and vulnerability assessment.
 
-التحسينات عن النسخة القديمة:
-1. بناء CPE دقيق من مخرجات nmap نفسها (حقل cpe / product / version)
-   بدل الخريطة الثابتة اللي كانت تفترض ftp=vsftpd و ssh=OpenSSH إلخ.
-2. دعم NVD API Key (من --nvd-api-key أو متغير البيئة NVD_API_KEY)
-   + Rate limiting محترم للحدود (5 طلبات/30 ثانية بدون Key، 50 طلب/30 ثانية بـ Key)
-   + إعادة محاولة مع Backoff على 429 و 5xx وأخطاء الشبكة.
-3. ترتيب نتائج الـ CVEs تنازلياً حسب CVSS baseScore بدل أول 5 نتايج عشوائية.
-4. timeout على كل طلبات requests (بدون timeout كانت ممكن تتعلّق للأبد).
-5. exit() اتبدلت بـ sys.exit(1) وكل الكود اتحط جوه main().
-6. بحث محلي في Exploit-DB عن طريق searchsploit (بدون أي Rate limits).
+The scanner combines Nmap service discovery, NVD CVE research, optional
+local Exploit-DB lookups, evidence-based assessment, and structured reports.
+All scans require an explicit authorization acknowledgement.
 """
 
 import argparse
@@ -173,32 +166,36 @@ def write_json_report(filename, results):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="بورت سكانر محسّن: nmap + CVEs من NVD + بحث Exploit-DB محلي")
-    parser.add_argument("--target", required=True, help="الـ IP أو الدومين المستهدف")
-    parser.add_argument("--ports", default="1-1000", help="رينج البورتات (مثال: 1-1000 أو 22,80,443)")
+        description="Authorized network reconnaissance and vulnerability assessment using Nmap, NVD, and optional Exploit-DB.")
+    parser.add_argument("--target", required=True, help="Target IP address, CIDR network, or hostname.")
+    parser.add_argument(
+        "--authorized", action="store_true", required=True,
+        help="Confirm that you own the target or have explicit permission to scan it."
+    )
+    parser.add_argument("--ports", default="1-1000", help="TCP ports or ranges (for example: 1-1000 or 22,80,443).")
     parser.add_argument("--nvd-api-key", default=None,
-                        help="NVD API Key (أو متغير البيئة NVD_API_KEY) - بيرفع الحد لـ 50 طلب/30 ثانية")
-    parser.add_argument("--nmap-args", default="-sV", help="أرجومنتس لـ nmap (الافتراضي: -sV)")
+                        help="NVD API key (or NVD_API_KEY environment variable).")
+    parser.add_argument("--nmap-args", default="-sV", help="Allowlisted Nmap flags (default: -sV).")
     parser.add_argument("--os-detection", action="store_true",
-                        help="فعّل Nmap OS detection (-O)؛ قد يحتاج صلاحيات root/raw sockets")
+                        help="Enable Nmap OS detection (-O); may require root/raw-socket privileges.")
     parser.add_argument("--results-per-page", type=int, default=10,
-                        help="عدد نتائج NVD لكل استعلام (من 1 إلى 2000)")
+                        help="Maximum NVD results per query (1-2000).")
     parser.add_argument("--http-probe", action="store_true",
-                        help="حلل HTTP headers وخصائص cookies بطلب HEAD واحد فقط لكل خدمة ويب")
+                        help="Inspect HTTP headers and cookie attributes with one HEAD request per web service.")
     parser.add_argument("--web-intel", action="store_true",
-                        help="حلل HTML وCMS/JS hints وrobots.txt وsitemap.xml بطلبات محدودة لنفس الـhost")
+                        help="Inspect bounded same-host HTML, CMS/JS hints, robots.txt, and sitemap.xml.")
     parser.add_argument("--no-exploitdb", action="store_true",
-                        help="عطّل بحث searchsploit المحلي")
+                        help="Disable local SearchSploit lookups.")
     parser.add_argument("--no-nvd", action="store_true",
-                        help="تخطّى استعلامات NVD (مفيد للاختبار دون اتصال أو عند تعطل الخدمة)")
+                        help="Skip NVD lookups (useful offline or when NVD is unavailable).")
     parser.add_argument("--html-output", default=None,
-                        help="اسم ملف تقرير HTML مستقل (اختياري)")
+                        help="Optional standalone HTML report path.")
     parser.add_argument("--asset-criticality", choices=("unknown", "low", "medium", "high", "critical"), default="unknown",
-                        help="أهمية الأصل حسب تقييمك؛ لا يتم استنتاجها تلقائياً")
+                        help="Operator-supplied asset criticality; never inferred automatically.")
     parser.add_argument("--exposure", choices=("unknown", "internal", "internet"), default="unknown",
-                        help="مدى تعرض الأصل حسب معلومات مؤكدة منك؛ لا يُستنتج من المنافذ")
+                        help="Operator-supplied exposure; never inferred from open ports.")
     parser.add_argument("--output", "-o", default=None,
-                        help="اسم ملف النتائج JSON (اختياري)")
+                        help="Optional JSON report path.")
     args = parser.parse_args(argv)
     try:
         args.target = validate_target(args.target)
@@ -270,23 +267,23 @@ def main():
     args = parse_args()
     api_key = (args.nvd_api_key or os.environ.get("NVD_API_KEY") or "").strip() or None
     if api_key:
-        print("NVD API Key موجود - الحد: 50 طلب / 30 ثانية")
+        print("NVD API key detected; rate limit: 50 requests per 30 seconds.")
     else:
-        print("مفيش NVD API Key - الحد: 5 طلبات / 30 ثانية (حط NVD_API_KEY في البيئة لو عايز أسرع)")
+        print("No NVD API key detected; rate limit: 5 requests per 30 seconds. Set NVD_API_KEY to increase the limit.")
     limiter = NVDRateLimiter(NVD_LIMIT_WITH_KEY if api_key else NVD_LIMIT_NO_KEY, NVD_RATE_WINDOW)
     session = requests.Session()
 
     target = args.target
     started_at = datetime.now(timezone.utc)
     started_monotonic = time.monotonic()
-    print(f"بدء فحص: {target} على البورتات: {args.ports} (nmap args: {args.nmap_args})")
+    print(f"Starting scan: {target} | ports: {args.ports} | Nmap flags: {args.nmap_args}")
 
     scanner = nmap.PortScanner()
     try:
         scanner.scan(target, args.ports, arguments=args.nmap_args)
     except Exception as e:
-        print(f"حصل خطأ أثناء الفحص: {e}")
-        print("تأكد إن التارجت متصل وإنك شغال بصلاحيات sudo")
+        print(f"Scan failed: {e}")
+        print("Check target reachability and required Nmap privileges.")
         sys.exit(1)
 
     try:
@@ -320,39 +317,39 @@ def main():
             service = port_data.get("name") or ""
             product = (port_data.get("product") or "").strip()
             version = (port_data.get("version") or "").strip()
-            print(f"Port {port}: مفتوح - الخدمة: {service} - المنتج: {product or '؟'} - النسخة: {version or '؟'}")
+            print(f"Port {port}: open | service: {service} | product: {product or 'unknown'} | version: {version or 'unknown'}")
 
             cves = []
             cpes_tried = []
             if args.no_nvd:
-                print("  تم تخطي NVD بناءً على --no-nvd")
+                print("  Skipping NVD lookup (--no-nvd).")
             elif version:
-                print(f"  بدور على CVEs لـ {product or service} {version}...")
+                print(f"  Looking up CVEs for {product or service} {version}...")
                 cves, cpes_tried = check_cve_nvd(
                     session, port_data, api_key, limiter, args.results_per_page)
                 if cves:
-                    print(f"  لقيت {len(cves)} CVE - أعلى 5 حسب CVSS:")
+                    print(f"  Found {len(cves)} CVE candidates; top 5 by CVSS:")
                     for c in cves[:5]:
-                        score_txt = f"{c['cvss']}" if c["cvss"] is not None else "؟"
-                        print(f"    {c['id']} - CVSS {score_txt} ({c['severity'] or 'غير محدد'})")
+                        score_txt = f"{c['cvss']}" if c["cvss"] is not None else "unknown"
+                        print(f"    {c['id']} - CVSS {score_txt} ({c['severity'] or 'unspecified'})")
                 else:
-                    print("  مفيش CVEs واضحة اتلقت")
+                    print("  No CVE candidates found.")
             else:
-                print("  مفيش نسخة معروفة - هعدي NVD وأدور في Exploit-DB بس")
+                print("  No version detected; skipping NVD and checking local Exploit-DB only.")
 
             exploits = []
             if not args.no_exploitdb:
-                print("  بدور على Exploits محلياً في Exploit-DB (searchsploit)...")
+                print("  Searching local Exploit-DB with SearchSploit...")
                 # Generic service labels are not reliable product fingerprints.
                 exploits = searchsploit_lookup(product, version) if product else []
                 if not product:
-                    print("  مفيش product fingerprint موثوق - تم تخطي Searchsploit لتجنب نتائج غير مرتبطة")
+                    print("  No reliable product fingerprint; skipping SearchSploit to avoid unrelated results.")
                 elif exploits:
-                    print(f"  لقيت {len(exploits)} exploit محتمل (أول 5):")
+                    print(f"  Found {len(exploits)} possible references; showing up to 5:")
                     for e in exploits[:5]:
                         print(f"    EDB-{e['id']} - {e['title']}")
                 else:
-                    print("  مفيش exploits اتلقت محلياً")
+                    print("  No local Exploit-DB references found.")
 
             # Finalize NVD applicability before correlating exploit references with CVEs.
             cves = assess_cves(cves)
@@ -364,7 +361,7 @@ def main():
                 exploits, cves, target_platform=target_platform
             )
             if exploit_intelligence:
-                print(f"  Exploit intelligence: {len(exploit_intelligence)} مرجع مع إرشادات تحقق آمنة")
+                print(f"  Exploit intelligence: {len(exploit_intelligence)} references with safe validation guidance.")
 
             http_assessment = {"status": "not_requested"}
             if args.http_probe:
@@ -474,9 +471,9 @@ def main():
     try:
         write_json_report(filename, report)
     except OSError as e:
-        print(f"تعذر حفظ التقرير: {e}")
+        print(f"Could not write JSON report: {e}")
         sys.exit(1)
-    print(f"تم حفظ النتائج في {filename}")
+    print(f"JSON report saved to {filename}")
     if args.html_output:
         try:
             html_path = write_html_report(
@@ -485,9 +482,9 @@ def main():
                 hosts=hosts,
             )
         except OSError as exc:
-            print(f"تعذر حفظ تقرير HTML: {exc}")
+            print(f"Could not write HTML report: {exc}")
             sys.exit(1)
-        print(f"تم حفظ تقرير HTML في {html_path}")
+        print(f"HTML report saved to {html_path}")
 
 
 if __name__ == "__main__":
