@@ -195,7 +195,7 @@ Replace `192.0.2.10` with a lab target or another system you are authorized to s
 
 ## Sample lab evidence
 
-The [`evidence/`](evidence/) directory contains three complementary proof sets: (1) an authorized Metasploitable 2 scan with NVD disabled, (2) a second authorized scan with NVD enabled, each with its own raw JSON report and HTML dashboard rendered from that exact report, and (3) a clearly labeled synthetic JSON/dashboard fixture demonstrating per-host CVE deduplication, cross-service correlation, and mixed applicability evidence. The NVD-enabled report distinguishes version matches from unverified candidates and documents why neither alone proves exploitability. The synthetic fixture is fabricated test data, not a real scan or vulnerability.
+The `evidence/` directory contains a reproduction guide for the authorized Metasploitable 2 lab workflow. Generated JSON and HTML reports are kept outside version control because they can expose target addresses, service inventories, and vulnerability observations.
 
 ## Tests
 
