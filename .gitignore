@@ -28,3 +28,7 @@ reports/
 build/
 dist/
 *.egg-info/
+
+# Generated scan evidence (may contain sensitive target and service details)
+evidence/*
+!evidence/README.md
