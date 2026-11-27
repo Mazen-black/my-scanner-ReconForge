@@ -1,15 +1,14 @@
 # ReconForge
 
 [![Tests](https://github.com/Mazen-black/my-scanner-ReconForge/actions/workflows/tests.yml/badge.svg)](https://github.com/Mazen-black/my-scanner-ReconForge/actions/workflows/tests.yml)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/Mazen-black/my-scanner-ReconForge)](https://github.com/Mazen-black/my-scanner-ReconForge/releases/latest)
 
-**ReconForge** is a Python network reconnaissance and vulnerability-assessment toolkit. It combines Nmap service detection, NVD CVE candidate enrichment, optional local Exploit-DB references, evidence-aware triage, and shareable JSON/HTML reports.
+**my-scanner-ReconForge** is a Python-based network reconnaissance and vulnerability assessment tool.
 
-> **Current release:** `0.10.11` · **Report schema:** `1.16` · **Python:** `3.10+`
+A Python-based network service scanner that combines Nmap service/version detection with CVE lookups from the NVD and optional local Exploit-DB searches through Searchsploit. Results are saved as structured JSON for review.
 
-**Project status:** Educational / portfolio project. Findings are investigation leads, not proof of vulnerability or exploitability.
+> **Current version:** Scanner 0.10.11 · Report schema 1.16
+
+**Status:** Educational / portfolio project. Findings are leads for manual validation, not proof that a system is vulnerable.
 
 ## Features
 
@@ -90,37 +89,18 @@ sudo apt install nmap exploitdb
 
 Create a virtual environment and install Python dependencies:
 
-Clone the released source from the default branch and install it in an isolated environment:
-
 ```bash
 git clone https://github.com/Mazen-black/my-scanner-ReconForge.git
 cd my-scanner-ReconForge
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install .
-```
-
-Alternatively, install the published wheel directly inside an active virtual environment:
-
-```bash
-pip install https://github.com/Mazen-black/my-scanner-ReconForge/releases/download/v0.10.11/reconforge-0.10.11-py3-none-any.whl
+pip install -e .
 ```
 
 Editable installation provides the `reconforge` and `reconforge-report` commands. The root-level `scanner.py` and `report.py` scripts remain available for compatibility.
 
 If you do not use Searchsploit, omit the `exploitdb` system package and run with `--no-exploitdb`.
-
-### Build a local Debian package (experimental)
-
-A Debian package build script is included for Kali/Debian users who prefer `apt`-managed installation. It builds locally and does not publish an APT repository or install anything by itself:
-
-```bash
-sh packaging/build-deb.sh
-sudo apt install ./dist/reconforge_0.10.11_all.deb
-```
-
-The package declares its Python and Nmap dependencies so APT can resolve them from your configured repositories. Searchsploit remains optional. The `.deb` is currently a local build artifact, not an asset attached to the GitHub Release.
 
 ## Usage
 
@@ -211,36 +191,17 @@ reconforge --help
 
 Replace `192.0.2.10` with a lab target or another system you are authorized to scan. The address above is reserved for documentation examples.
 
-## Live lab validation
+## Sample lab evidence
 
-The screenshots below are genuine outputs from two bounded scans of an authorized Metasploitable 2 virtual machine. The first run disabled NVD enrichment to establish a service-discovery baseline; the second enabled NVD enrichment to compare CVE candidate discovery and review prioritization.
+The `evidence/` directory contains a reproduction guide for the authorized Metasploitable 2 lab workflow. Generated JSON and HTML reports are kept outside version control because they can expose target addresses, service inventories, and vulnerability observations.
 
-<details open>
-<summary><strong>ReconForge HTML dashboard — NVD-enriched lab run</strong></summary>
+![ReconForge HTML dashboard from the NVD-enriched Metasploitable 2 lab run](evidence/metasploitable2-2026-11-26-nvd/dashboard.png)
 
-![ReconForge NVD-enriched HTML dashboard](evidence/metasploitable2-2026-11-26-nvd/dashboard.png)
+The NVD-enriched run against the same lab VM found 8 of 8 selected open services, 54 CVE observations (44 unique per host), and 39 local Exploit-DB references in about 76 seconds:
 
-</details>
-
-<details>
-<summary><strong>Scan console output</strong></summary>
-
-![ReconForge scan console output](evidence/metasploitable2-2026-11-26-nvd/scan-console.png)
-
-</details>
-
-| Lab run | NVD | Open TCP services | CVE observations | Unique CVE candidates | Duration |
-|---|---:|---:|---:|---:|---:|
-| Baseline | Disabled | 8 | 0 (lookup skipped) | 0 | ~17.65 s |
-| Enriched | Enabled | 8 | 54 | 44 | ~76.45 s |
-
-The `54` NVD observations are not 54 confirmed vulnerabilities. They aggregate to 44 unique candidate CVEs and require manual validation, especially where service banners are broad or package-specific backports may apply. No exploit was executed.
-
-- [Baseline scan report and evidence](evidence/metasploitable2-2026-11-26/README.md)
-- [NVD-enriched scan report and evidence](evidence/metasploitable2-2026-11-26-nvd/README.md)
-- [Reproduction guide and evidence-handling notes](evidence/README.md)
-
-Raw JSON, generated HTML, and unredacted console logs are intentionally excluded from Git because they can expose target and service details. Only reviewed summaries and screenshots are published.
+- [Baseline run and findings](evidence/metasploitable2-2026-11-26/README.md)
+- [NVD-enriched run and findings](evidence/metasploitable2-2026-11-26-nvd/README.md)
+- [Reproduction guide](evidence/README.md)
 
 ## Tests
 
