@@ -25,7 +25,7 @@ Out of scope:
 
 ## Reporting a vulnerability
 
-Report security problems privately through GitHub's private vulnerability reporting: open the repository's **Security** tab and choose **Report a vulnerability** (direct link: https://github.com/Mazen-black/my-scanner-ReconForge/security/advisories/new). Please do not open a public issue for a security problem.
+Report security problems privately through GitHub's private vulnerability reporting: open the repository's **Security** tab and choose **Report a vulnerability** (direct link: https://github.com/Mazen-black/my-scanner-ReconForge/security/advisories/new). If private reporting is not available on the Security tab, reach the maintainer through the contact links on the GitHub profile (https://github.com/Mazen-black) instead of opening a public issue.
 
 A useful report includes the ReconForge version, the report schema version if it is relevant, the steps to reproduce, and the impact you observed.
 
